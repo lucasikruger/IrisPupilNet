@@ -18,6 +18,18 @@ Welcome to the **Pupil and Iris Localization** project repository! This project 
 
 ## 🌐 Road Map
 
+### Summary
+
+| **Step** | **Description**                                                                    | **Status**      |
+|:--------:|:-----------------------------------------------------------------------------------|:---------------:|
+| **1**    | Investigate Current Papers                                                         | ✅ Done         |
+| **2**    | Deep Dive Reading                                                                  | 🔎 In Progress  |
+| **3**    | Obtain Datasets                                                                    | 📌 To Do        |
+| **4**    | Explore Different Model Types (Object Detection, Segmentation, etc.)               | 📌 To Do        |
+| **5**    | Test & Validate Models                                                             | 📌 To Do        |
+| **6**    | Write the Paper                                                                    | 📝 In Progress  |
+| **7**    | Merge & Present the Thesis                                                         | 📌 To Do        |
+
 Below is a structured plan for the project:
 
 1. **Investigate Current Papers** (✅ *Done*, but keeping the door open for more)
