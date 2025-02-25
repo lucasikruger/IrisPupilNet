@@ -29,17 +29,11 @@ Below is a structured plan for the project:
    - Identify suitable **data augmentation**, **preprocessing**, and **model architectures**.
 
 3. **Obtain Datasets** (🌐 *Next*)
-   - Collect or generate relevant **pupil and iris** image datasets (preferably with variety in lighting, poses, and occlusions).
-   - **Create a table** to keep track of potential datasets, including any sample references:
 
 | **Dataset Name**      | **Resolution** | **Format**        | **Sample Eye**    | **Link/Source**       |
 |-----------------------|----------------|-------------------|-------------------|-----------------------|
 | *Custom WebCam-Set*   | 640×480        | .jpg / .png       | *To be added*     | *TBD*                 |
-| *CASIA-Iris-Africa*   | 1088×640       | .bmp / .png       | *To be added*     | [CASIA Africa] [10]   |
-| *UBIRIS.v2*           | Various        | .jpg              | *To be added*     | *To be added*         |
-| *...Add More Rows...* | *...*          | *...*             | *...*             | *...*                 |
 
-   - Include notes on the type of **ground truth** available (segmentation mask, pupil center, etc.).
 
 4. **Explore Different Model Types** (🧐 *Research Approaches*)
    - Summarize potential **architectures** or strategies for pupil and iris localization:
@@ -47,20 +41,14 @@ Below is a structured plan for the project:
 | **Model Approach**                 | **Tried?** | **Notes**                                             |
 |-----------------------------------|-----------|-------------------------------------------------------|
 | **Object Detection** (e.g., YOLO) | ❌        | Could adapt bounding box for pupil/iris, might be less precise. |
-| **Segmentation** (e.g., U-Net)    | ❌        | Direct pixel-wise classification, common in iris tasks.  |
+| **Segmentation** (e.g., U-Net, YOLO)    | ❌        | Direct pixel-wise classification, common in iris tasks.  |
 | **Keypoint Detection** (e.g., MMPose) | ❌        | Could predict pupil/iris boundary points.             |
 | **Multi-Task** (e.g., multi-output CNN) | ❌ | Jointly learn pupil center, iris boundary, etc.        |
 | **Others**                         | ❌        | ...e.g., ellipse fitting, classical edge-based, etc.    |
 
-   - Mark each approach once tested.
-
 5. **Testing & Validation** (⚙️ *Implementation Stage*)
-   - Implement or adapt chosen model architectures.
-   - Evaluate on each **dataset**: measure **accuracy**, **precision**, **robustness** to occlusions.
 
 6. **Writing the Paper** (📝 *In Progress*)
-   - Document **methodology**, **experiments**, **results**, and **analysis** in detail.
-   - Create a cohesive narrative around the approach, its **clinical significance**, and **future work**.
 
 7. **Merge & Present the Thesis** (🎉 *Final Stage*)
    - Combine all modules (datasets, models, results) into a **unified thesis**.
@@ -68,7 +56,7 @@ Below is a structured plan for the project:
 
 ---
 
-## 🏗️ Repository Structure (Suggested)
+## 🏗️ Repository Structure (Example)
 
 ```
 .
