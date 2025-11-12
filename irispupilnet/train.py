@@ -1,7 +1,9 @@
-import argparse, os, math, sys
+import argparse, csv, sys
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List
 
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -32,6 +34,46 @@ try:
     import albumentations as A  # just to ensure requirement is installed
 except Exception:
     pass
+
+
+def render_metrics_plot(metrics: List[Dict[str, Any]], plot_path: Path):
+    if not metrics:
+        return
+    epochs = [m["epoch"] for m in metrics]
+    train_losses = [m["train_loss"] for m in metrics]
+    val_losses = [np.nan if m["val_loss"] is None else m["val_loss"] for m in metrics]
+    val_ious = [np.nan if m["val_iou"] is None else m["val_iou"] for m in metrics]
+
+    fig, axes = plt.subplots(2, 1, figsize=(8, 6), sharex=True)
+    axes[0].plot(epochs, train_losses, label="train loss", marker="o")
+    if not all(np.isnan(val_losses)):
+        axes[0].plot(epochs, val_losses, label="val loss", marker="s")
+    axes[0].set_ylabel("Loss")
+    axes[0].legend()
+    axes[0].grid(True, linestyle="--", alpha=0.4)
+
+    has_val_iou = not all(np.isnan(val_ious))
+    if has_val_iou:
+        axes[1].plot(epochs, val_ious, label="val IoU (iris+pupil)", marker="d", color="#2c7fb8")
+    axes[1].set_ylabel("IoU")
+    axes[1].set_xlabel("Epoch")
+    axes[1].set_ylim(0, 1)
+    axes[1].grid(True, linestyle="--", alpha=0.4)
+    if has_val_iou:
+        axes[1].legend(loc="upper left")
+
+    fig.tight_layout()
+    plot_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(plot_path)
+    plt.close(fig)
+
+
+def init_metrics_writer(csv_path: Path):
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    csv_file = csv_path.open("w", newline="")
+    writer = csv.writer(csv_file)
+    writer.writerow(["epoch", "train_loss", "val_loss", "val_iou"])
+    return csv_file, writer
 
 def build_model(model_name: str, in_channels: int, n_classes: int, base: int):
     ModelCtor = MODEL_REGISTRY[model_name]
@@ -104,7 +146,13 @@ def main():
     ap.add_argument("--weight-decay", type=float, default=1e-4)
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--out", type=Path, default=Path("runs/mobius_unet_se"))
+    ap.add_argument("--val-every", type=int, default=1, help="Evaluate on validation every N epochs.")
+    ap.add_argument("--metrics-csv", type=Path, default=None, help="Where to write epoch metrics CSV.")
+    ap.add_argument("--metrics-plot", type=Path, default=None, help="Where to save the metrics plot PNG.")
     args = ap.parse_args()
+
+    if args.val_every < 1:
+        raise ValueError("--val-every must be >= 1")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     args.out.mkdir(parents=True, exist_ok=True)
@@ -117,17 +165,61 @@ def main():
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     loss_fn = nn.CrossEntropyLoss()
 
-    best_iou = -1.0
-    for ep in range(1, args.epochs+1):
-        tr_loss = train_one_epoch(model, train_dl, opt, loss_fn, device)
-        val_loss, val_iou = evaluate(model, val_dl, loss_fn, device, num_classes=args.num_classes)
-        print(f"epoch {ep:02d} | train {tr_loss:.4f} | val {val_loss:.4f} | IoU(iris+pupil) {val_iou:.3f}")
+    metrics_csv_path = args.metrics_csv if args.metrics_csv is not None else (args.out / "metrics.csv")
+    metrics_plot_path = args.metrics_plot if args.metrics_plot is not None else (args.out / "metrics.png")
 
-        if val_iou > best_iou:
-            best_iou = val_iou
-            ckpt = args.out / "best.pt"
-            torch.save({"model": model.state_dict(), "args": vars(args)}, ckpt)
-            print(f"  ↳ saved {ckpt}")
+    print("Starting training run")
+    print(f"  dataset={args.dataset}, csv={args.csv}, data_root={args.data_root}")
+    print(f"  out={args.out}  val every {args.val_every} epoch(s)")
+    print(f"  metrics CSV -> {metrics_csv_path}")
+    print(f"  metrics plot -> {metrics_plot_path}")
+
+    metrics_file, metrics_writer = init_metrics_writer(metrics_csv_path)
+    metrics: List[Dict[str, Any]] = []
+    best_iou = -1.0
+    try:
+        for ep in range(1, args.epochs + 1):
+            tr_loss = train_one_epoch(model, train_dl, opt, loss_fn, device)
+            should_eval = (ep % args.val_every == 0)
+
+            val_loss = None
+            val_iou = None
+            if should_eval:
+                val_loss, val_iou = evaluate(model, val_dl, loss_fn, device, num_classes=args.num_classes)
+            msg = f"epoch {ep:02d} | train {tr_loss:.4f}"
+            if should_eval:
+                msg += f" | val {val_loss:.4f} | IoU(iris+pupil) {val_iou:.3f}"
+            else:
+                msg += " | val skipped"
+            print(msg)
+
+            if should_eval and val_iou is not None and val_iou > best_iou:
+                best_iou = val_iou
+                ckpt = args.out / "best.pt"
+                torch.save({"model": model.state_dict(), "args": vars(args)}, ckpt)
+                print(f"  ↳ saved {ckpt}")
+
+            metrics.append({
+                "epoch": ep,
+                "train_loss": tr_loss,
+                "val_loss": val_loss,
+                "val_iou": val_iou,
+            })
+            metrics_writer.writerow([
+                ep,
+                f"{tr_loss:.6f}",
+                f"{val_loss:.6f}" if val_loss is not None else "",
+                f"{val_iou:.6f}" if val_iou is not None else "",
+            ])
+            metrics_file.flush()
+
+            render_metrics_plot(metrics, metrics_plot_path)
+    finally:
+        metrics_file.close()
+
+    print("Training complete")
+    print(f"Metrics CSV saved to {metrics_csv_path}")
+    print(f"Metrics plot saved to {metrics_plot_path}")
 
 if __name__ == "__main__":
     main()
