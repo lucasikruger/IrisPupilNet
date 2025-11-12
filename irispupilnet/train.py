@@ -117,13 +117,16 @@ def build_dataloaders(dataset_name: str,
                       img_size: int,
                       batch_size: int,
                       workers: int,
-                      default_format: str):
+                      default_format: str,
+                      convert_to_grayscale: bool):
     DatasetCls = DATASET_REGISTRY[dataset_name]
     if dataset_name == "csv_seg":
         train_ds = DatasetCls(dataset_base_dir=data_root, csv_path=csv_path, split="train",
-                              img_size=img_size, default_format=default_format)
+                              img_size=img_size, default_format=default_format,
+                              convert_to_grayscale=convert_to_grayscale)
         val_ds   = DatasetCls(dataset_base_dir=data_root, csv_path=csv_path, split="val",
-                              img_size=img_size, default_format=default_format)
+                              img_size=img_size, default_format=default_format,
+                              convert_to_grayscale=convert_to_grayscale)
     else:
         raise ValueError("Use dataset=csv_seg for the CSV-driven loader.")
 
@@ -152,10 +155,15 @@ def main():
     ap.add_argument("--val-every", type=int, default=1, help="Evaluate on validation every N epochs.")
     ap.add_argument("--metrics-csv", type=Path, default=None, help="Where to write epoch metrics CSV.")
     ap.add_argument("--metrics-plot", type=Path, default=None, help="Where to save the metrics plot PNG.")
+    ap.add_argument("--color", action="store_true", help="Keep RGB images (default is grayscale).")
     args = ap.parse_args()
 
     if args.val_every < 1:
         raise ValueError("--val-every must be >= 1")
+
+    convert_to_grayscale = not args.color
+    if convert_to_grayscale:
+        args.in_channels = 1
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     args.out.mkdir(parents=True, exist_ok=True)
@@ -170,7 +178,8 @@ def main():
 
     train_dl, val_dl = build_dataloaders(args.dataset, args.data_root, args.csv,
                                          args.img_size, args.batch_size, args.workers,
-                                         default_format=args.default_format)
+                                         default_format=args.default_format,
+                                         convert_to_grayscale=convert_to_grayscale)
     model = build_model(args.model, args.in_channels, args.num_classes, args.base).to(device)
 
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -184,6 +193,7 @@ def main():
     print(f"  out={args.out}  val every {args.val_every} epoch(s)")
     print(f"  metrics CSV -> {metrics_csv_path}")
     print(f"  metrics plot -> {metrics_plot_path}")
+    print(f"  image mode = {'grayscale' if convert_to_grayscale else 'RGB'}")
 
     metrics_file, metrics_writer = init_metrics_writer(metrics_csv_path)
     metrics: List[Dict[str, Any]] = []

@@ -31,6 +31,7 @@ class CSVIrisPupilSeg(Dataset):
         split: str,
         img_size: int,
         default_format: str = "mobius_3c",
+        convert_to_grayscale: bool = True,
         extra_filters: Optional[Dict[str, Any]] = None,
     ):
         super().__init__()
@@ -61,7 +62,6 @@ class CSVIrisPupilSeg(Dataset):
             img_abs = (self.base / row["rel_image_path"]).resolve()
             msk_abs = (self.base / row["rel_mask_path"]).resolve()
             if not img_abs.exists() or not msk_abs.exists():
-                print(f"Warning: missing image or mask file. Skipping sample: {img_abs}, {msk_abs}")
                 continue
             fmt = str(row["dataset_format"]).strip() if fmt_col_present and pd.notna(row["dataset_format"]) else self.default_format
             self.items.append((img_abs, msk_abs, fmt))
@@ -69,7 +69,8 @@ class CSVIrisPupilSeg(Dataset):
         assert len(self.items) > 0, f"No samples found for split={self.split} in {self.csv_path}"
 
         self.img_size = int(img_size)
-        self.tf = get_transforms(self.img_size, "train" if self.split == "train" else "val")
+        self.num_channels = 1 if convert_to_grayscale else 3
+        self.tf = get_transforms(self.img_size, "train" if self.split == "train" else "val", num_channels=self.num_channels)
 
     def __len__(self) -> int:
         return len(self.items)
@@ -77,6 +78,9 @@ class CSVIrisPupilSeg(Dataset):
     def __getitem__(self, idx: int):
         img_path, msk_path, fmt = self.items[idx]
         img = cv2.cvtColor(cv2.imread(str(img_path)), cv2.COLOR_BGR2RGB)
+        if self.num_channels == 1:
+            gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+            img = gray[..., None]
 
         raw_mask_bgr = cv2.imread(str(msk_path), cv2.IMREAD_COLOR)  # keep as BGR for converters that expect it
         mask_converter = get_mask_converter(fmt)
