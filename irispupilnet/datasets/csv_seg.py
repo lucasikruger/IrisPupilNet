@@ -61,6 +61,7 @@ class CSVIrisPupilSeg(Dataset):
             img_abs = (self.base / row["rel_image_path"]).resolve()
             msk_abs = (self.base / row["rel_mask_path"]).resolve()
             if not img_abs.exists() or not msk_abs.exists():
+                print(f"Warning: missing image or mask file. Skipping sample: {img_abs}, {msk_abs}")
                 continue
             fmt = str(row["dataset_format"]).strip() if fmt_col_present and pd.notna(row["dataset_format"]) else self.default_format
             self.items.append((img_abs, msk_abs, fmt))
