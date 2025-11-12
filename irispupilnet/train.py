@@ -190,6 +190,7 @@ def main():
 
     print("Starting training run")
     print(f"  dataset={args.dataset}, csv={args.csv}, data_root={args.data_root}")
+    print(f"  model={args.model}, img_size={args.img_size}, in_channels={args.in_channels}")
     print(f"  out={args.out}  val every {args.val_every} epoch(s)")
     print(f"  metrics CSV -> {metrics_csv_path}")
     print(f"  metrics plot -> {metrics_plot_path}")
