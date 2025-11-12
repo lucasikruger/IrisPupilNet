@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 
 def _ensure_package_imports():
@@ -79,10 +80,11 @@ def build_model(model_name: str, in_channels: int, n_classes: int, base: int):
     ModelCtor = MODEL_REGISTRY[model_name]
     return ModelCtor(in_channels=in_channels, n_classes=n_classes, base=base)
 
-def train_one_epoch(model, dl, optimizer, loss_fn, device):
+def train_one_epoch(model, dl, optimizer, loss_fn, device, epoch: int = None):
     model.train()
     total = 0.0
-    for x, y in dl:
+    desc = f"Train epoch {epoch:02d}" if epoch is not None else "Train"
+    for x, y in tqdm(dl, desc=desc, leave=False):
         x, y = x.to(device), y.to(device)
         optimizer.zero_grad(set_to_none=True)
         logits = model(x)
@@ -93,10 +95,11 @@ def train_one_epoch(model, dl, optimizer, loss_fn, device):
     return total / len(dl.dataset)
 
 @torch.no_grad()
-def evaluate(model, dl, loss_fn, device, num_classes: int):
+def evaluate(model, dl, loss_fn, device, num_classes: int, epoch: int = None):
     model.eval()
     tot_loss, tot_iou, n = 0.0, 0.0, 0
-    for x, y in dl:
+    desc = f"Val epoch {epoch:02d}" if epoch is not None else "Val"
+    for x, y in tqdm(dl, desc=desc, leave=False):
         x, y = x.to(device), y.to(device)
         logits = model(x)
         loss = loss_fn(logits, y).item()
@@ -157,6 +160,14 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     args.out.mkdir(parents=True, exist_ok=True)
 
+    device_name = "cpu"
+    if device.type == "cuda":
+        try:
+            device_name = torch.cuda.get_device_name(device.index if device.index is not None else 0)
+        except Exception:
+            device_name = "cuda"
+    print(f"Using device: {device} ({device_name})")
+
     train_dl, val_dl = build_dataloaders(args.dataset, args.data_root, args.csv,
                                          args.img_size, args.batch_size, args.workers,
                                          default_format=args.default_format)
@@ -179,13 +190,13 @@ def main():
     best_iou = -1.0
     try:
         for ep in range(1, args.epochs + 1):
-            tr_loss = train_one_epoch(model, train_dl, opt, loss_fn, device)
+            tr_loss = train_one_epoch(model, train_dl, opt, loss_fn, device, epoch=ep)
             should_eval = (ep % args.val_every == 0)
 
             val_loss = None
             val_iou = None
             if should_eval:
-                val_loss, val_iou = evaluate(model, val_dl, loss_fn, device, num_classes=args.num_classes)
+                val_loss, val_iou = evaluate(model, val_dl, loss_fn, device, num_classes=args.num_classes, epoch=ep)
             msg = f"epoch {ep:02d} | train {tr_loss:.4f}"
             if should_eval:
                 msg += f" | val {val_loss:.4f} | IoU(iris+pupil) {val_iou:.3f}"
