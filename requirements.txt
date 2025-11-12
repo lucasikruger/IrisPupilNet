@@ -1,9 +1,12 @@
 # IrisPupilNet - Core Dependencies
 # Python 3.10+ required
 
+matplotlib
+
 # Deep Learning
 torch>=2.0.0
 torchvision>=0.15.0
+mediapipe
 
 # Data Processing
 numpy>=1.24.0
@@ -20,6 +23,7 @@ tqdm>=4.65.0
 # Optional: ONNX Export
 onnx>=1.14.0
 onnxruntime>=1.16.0
+onnxscript
 
 # Development (optional - see requirements-dev.txt)
 # pytest>=7.4.0

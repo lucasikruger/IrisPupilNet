@@ -15,6 +15,7 @@ Usage:
 """
 
 import argparse
+import pathlib
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -146,7 +147,9 @@ def main():
     model = UNetSESmall(in_channels=args.in_channels, n_classes=args.classes, base=args.base)
 
     # Load checkpoint (supports both state_dict only and full checkpoint)
-    checkpoint = torch.load(args.checkpoint, map_location=device)
+    safe_classes = [pathlib.Path, pathlib.PosixPath]
+    with torch.serialization.safe_globals(safe_classes):
+        checkpoint = torch.load(args.checkpoint, map_location=device)
     if isinstance(checkpoint, dict) and "model" in checkpoint:
         # Full checkpoint with metadata
         state_dict = checkpoint["model"]
