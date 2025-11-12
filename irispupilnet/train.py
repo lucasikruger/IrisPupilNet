@@ -1,15 +1,32 @@
-import argparse, os, math
+import argparse, os, math, sys
 from pathlib import Path
 from typing import Dict, Any
+
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from datasets import __init__ as ds_init  # to ensure registry import side-effects
-from models   import __init__ as md_init  # same
-from datasets import __init__ as _
-from models import MODEL_REGISTRY
-from datasets import DATASET_REGISTRY
-from utils.metrics import mean_iou_ignore_bg
+
+
+def _ensure_package_imports():
+    """
+    Allow running as `python -m irispupilnet.train` (preferred) **and**
+    `python irispupilnet/train.py` by ensuring the project root is on sys.path
+    before importing package modules.
+    """
+    if __package__ in (None, ""):
+        project_root = Path(__file__).resolve().parents[1]
+        project_root_str = str(project_root)
+        if project_root_str not in sys.path:
+            sys.path.insert(0, project_root_str)
+
+
+_ensure_package_imports()
+
+from irispupilnet import datasets as ds_init  # noqa: F401 (side-effects for registry)
+from irispupilnet import models as md_init  # noqa: F401
+from irispupilnet.models import MODEL_REGISTRY
+from irispupilnet.datasets import DATASET_REGISTRY
+from irispupilnet.utils.metrics import mean_iou_ignore_bg
 
 try:
     import albumentations as A  # just to ensure requirement is installed
