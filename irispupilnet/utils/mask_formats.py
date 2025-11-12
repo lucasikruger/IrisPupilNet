@@ -36,6 +36,11 @@ def mobius_3c(mask_bgr: np.ndarray) -> np.ndarray:
 def iris_pupil_eye_cls(mask_bgr: np.ndarray) -> np.ndarray:
     return mobius_3c(mask_bgr)
 
+
+@register_mask_format("mobius")
+def mobius_alias(mask_bgr: np.ndarray) -> np.ndarray:
+    return mobius_3c(mask_bgr)
+
 @register_mask_format("mobius_2c_pupil_only")  # 0=bg, 1=pupil (iris folded into bg)
 def mobius_2c_pupil_only(mask_bgr: np.ndarray) -> np.ndarray:
     mask_rgb = cv2.cvtColor(mask_bgr, cv2.COLOR_BGR2RGB)
