@@ -1,0 +1,9 @@
+OpenEDS
+
+https://www.kaggle.com/code/edventy/segiris
+https://www.kaggle.com/code/banddaniel/iris-segmentation-u-net-w-tpu-dice-coef-0-94
+
+
+Synthetic Human Eyes
+
+https://www.kaggle.com/datasets/allexmendes/synthetic-human-eyes?select=segmentation

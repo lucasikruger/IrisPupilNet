@@ -1,0 +1,16 @@
+# Core
+opencv-python>=4.8
+numpy>=1.24
+
+# Face landmark detection
+mediapipe==0.10.14
+
+# Optional segmentation support (ONNX model inference)
+onnxruntime>=1.16.0   # CPU version
+# onnxruntime-gpu>=1.16.0   # (if you want CUDA support)
+
+# Utilities
+tqdm>=4.66
+
+# Onnx export (if needed)
+torch

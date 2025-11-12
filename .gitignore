@@ -1,3 +1,42 @@
+# ============================================
+# IrisPupilNet Specific
+# ============================================
+
+# Virtual environments (both standard and custom)
+.env/
+venv/
+env/
+ENV/
+*.venv/
+
+# Dataset files (large binary files)
+data/
+*.h5
+*.hdf5
+*.tar
+*.zip
+*.tar.gz
+
+# Model checkpoints (large files - track via Git LFS or external storage)
+checkpoints/*.pt
+checkpoints/*.pth
+checkpoints/*.onnx
+!checkpoints/.gitkeep
+runs/
+
+# Training outputs
+wandb/
+tensorboard/
+logs/
+
+# Dataset preparation outputs
+dataset/*output*/
+tools/*output*/
+
+# ============================================
+# Python Standard
+# ============================================
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
