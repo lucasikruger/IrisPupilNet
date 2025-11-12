@@ -4,7 +4,7 @@ Export a trained UNetSESmall (.pt checkpoint) to ONNX (NHWC format).
 
 FIXED VERSION: Now includes SE (Squeeze-and-Excitation) blocks to match training architecture.
 
-Exports NHWC layout: input [1,H,W,3] -> output [1,H,W,3] logits.
+Exports NHWC layout: input [1,H,W,C] -> output [1,H,W,3] logits. Default C=1 (grayscale).
 This format is convenient for browser/ONNX Runtime deployment.
 
 Usage:
@@ -137,12 +137,13 @@ def main():
     ap.add_argument("--size", type=int, default=160, help="Input image size (H=W, default 160)")
     ap.add_argument("--classes", type=int, default=3, help="Number of output classes (default 3)")
     ap.add_argument("--base", type=int, default=32, help="Base number of channels (default 32)")
+    ap.add_argument("--in-channels", type=int, choices=[1,3], default=1, help="Number of input channels (default 1 for grayscale)")
     args = ap.parse_args()
 
     device = torch.device("cpu")
 
     # Load model
-    model = UNetSESmall(in_channels=3, n_classes=args.classes, base=args.base)
+    model = UNetSESmall(in_channels=args.in_channels, n_classes=args.classes, base=args.base)
 
     # Load checkpoint (supports both state_dict only and full checkpoint)
     checkpoint = torch.load(args.checkpoint, map_location=device)
@@ -163,7 +164,7 @@ def main():
 
     # Wrap for NHWC export
     wrapped = NHWCWrapper(model)
-    dummy_input = torch.randn(1, args.size, args.size, 3, device=device)
+    dummy_input = torch.randn(1, args.size, args.size, args.in_channels, device=device)
 
     # Export to ONNX
     torch.onnx.export(
@@ -181,7 +182,7 @@ def main():
     )
 
     print(f"✓ Exported ONNX (NHWC format) to: {args.out}")
-    print(f"  Input shape:  [batch, {args.size}, {args.size}, 3]")
+    print(f"  Input shape:  [batch, {args.size}, {args.size}, {args.in_channels}]")
     print(f"  Output shape: [batch, {args.size}, {args.size}, {args.classes}]")
 
 

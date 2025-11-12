@@ -89,12 +89,15 @@ def load_onnx_session(model_path):
     except Exception:
         return ort.InferenceSession(str(model_path), providers=['CPUExecutionProvider'])
 
-def run_segmentation(sess, crop_bgr):
+def run_segmentation(sess, crop_bgr, input_channels=1):
     """crop_bgr: 160x160x3 BGR -> [160,160] mask 0:bg,1:iris,2:pupil"""
     if crop_bgr is None:
         return None
-    crop_rgb = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
-    inp = (crop_rgb.astype(np.float32) / 255.0)[None, ...]  # [1,H,W,3]
+    if input_channels == 1:
+        crop = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2GRAY)[..., None]
+    else:
+        crop = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
+    inp = (crop.astype(np.float32) / 255.0)[None, ...]
     input_name  = sess.get_inputs()[0].name
     output_name = sess.get_outputs()[0].name
     out = sess.run([output_name], {input_name: inp})[0]  # [1,H,W,3]
@@ -134,6 +137,8 @@ def main():
     ap.add_argument("--no-mirror", action="store_true", help="disable selfie mirror view")
     ap.add_argument("--model", type=str, default="", help="path to ONNX model (optional)")
     ap.add_argument("--tile", type=int, default=240, help="per-tile size for grid window")
+    ap.add_argument("--input-channels", type=int, choices=[1,3], default=1,
+                    help="Segmentation model input channels (default 1 for grayscale)")
     args = ap.parse_args()
 
     # MediaPipe FaceMesh
@@ -200,14 +205,14 @@ def main():
         tr = label_tile(right_crop if right_crop is not None else np.zeros((IMG_SIZE,IMG_SIZE,3), np.uint8), "Right eye")
 
         if session is not None and left_crop is not None:
-            l_mask = run_segmentation(session, left_crop)
+            l_mask = run_segmentation(session, left_crop, input_channels=args.input_channels)
             bl_img = overlay_mask_on_image(left_crop, l_mask) if l_mask is not None else left_crop
             bl = label_tile(bl_img, "Left seg")
         else:
             bl = label_tile(np.zeros((IMG_SIZE,IMG_SIZE,3), np.uint8), "Left seg (no model)")
 
         if session is not None and right_crop is not None:
-            r_mask = run_segmentation(session, right_crop)
+            r_mask = run_segmentation(session, right_crop, input_channels=args.input_channels)
             br_img = overlay_mask_on_image(right_crop, r_mask) if r_mask is not None else right_crop
             br = label_tile(br_img, "Right seg")
         else:

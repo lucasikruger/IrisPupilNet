@@ -4,7 +4,7 @@ Export a trained UNetSmall (.pt state_dict) to ONNX (NHWC).
 
 Matches the training architecture you posted:
 - Up blocks receive (low + skip) channels after concat.
-- Exports NHWC: input [1,H,W,3] -> output [1,H,W,3] logits.
+- Exports NHWC: input [1,H,W,C] -> output [1,H,W,3] logits (default C=1 grayscale).
 
 Usage:
   python export_to_onnx.py \
@@ -58,9 +58,9 @@ class Up(nn.Module):
         return self.conv(x)
 
 class UNetSmall(nn.Module):
-    def __init__(self, n_classes=3, base=32):
+    def __init__(self, in_channels=3, n_classes=3, base=32):
         super().__init__()
-        self.inc = DoubleConv(3, base)             # -> base
+        self.inc = DoubleConv(in_channels, base)    # -> base
         self.d1  = Down(base, base*2)              # -> base*2
         self.d2  = Down(base*2, base*4)            # -> base*4
         self.d3  = Down(base*4, base*8)            # -> base*8
@@ -100,17 +100,18 @@ def main():
     ap.add_argument("--size", type=int, default=160, help="Input H=W (default 160)")
     ap.add_argument("--classes", type=int, default=3, help="Number of classes (default 3)")
     ap.add_argument("--base", type=int, default=32, help="Base channels (default 32)")
+    ap.add_argument("--in-channels", type=int, choices=[1,3], default=1, help="Input channels (default 1 for grayscale)")
     args = ap.parse_args()
 
     device = torch.device("cpu")
-    model = UNetSmall(n_classes=args.classes, base=args.base)
+    model = UNetSmall(in_channels=args.in_channels, n_classes=args.classes, base=args.base)
     # Load your state_dict
     sd = torch.load(args.checkpoint, map_location=device)
     model.load_state_dict(sd, strict=True)
     model.eval()
 
     wrapped = NHWCWrapper(model)
-    dummy = torch.randn(1, args.size, args.size, 3, device=device)
+    dummy = torch.randn(1, args.size, args.size, args.in_channels, device=device)
 
     torch.onnx.export(
         wrapped, dummy, args.out,

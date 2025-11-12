@@ -9,3 +9,4 @@ def register_model(name: str):
 
 # Import model modules to trigger registration
 from . import unet_se
+from . import seresnext_unet
