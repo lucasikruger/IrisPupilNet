@@ -39,8 +39,8 @@ except Exception:
     pass
 
 
-def render_metrics_plot(metrics: List[Dict[str, Any]], plot_path: Path):
-    """Render comprehensive metrics plot with all 4 subplots."""
+def render_metrics_plot(metrics: List[Dict[str, Any]], plot_path: Path, best_epoch: int = None):
+    """Render comprehensive metrics plot with all subplots and best epoch marker."""
     if not metrics:
         return
 
@@ -58,30 +58,42 @@ def render_metrics_plot(metrics: List[Dict[str, Any]], plot_path: Path):
     iou_iris = [np.nan if "iou_iris" not in m else m["iou_iris"] for m in metrics]
     iou_pupil = [np.nan if "iou_pupil" not in m else m["iou_pupil"] for m in metrics]
 
-    # Create figure with 4 subplots
-    fig, axes = plt.subplots(2, 2, figsize=(12, 8), sharex=True)
+    # Create figure with 2x3 subplots
+    fig, axes = plt.subplots(2, 3, figsize=(18, 8), sharex=True)
 
-    # Plot 1: Loss
-    axes[0, 0].plot(epochs, train_losses, label="train loss", marker="o", linewidth=2)
-    if not all(np.isnan(val_losses)):
-        axes[0, 0].plot(epochs, val_losses, label="val loss", marker="s", linewidth=2)
+    # Plot 1: Train Loss
+    axes[0, 0].plot(epochs, train_losses, label="train loss", marker="o", linewidth=2, color="#1f77b4")
     axes[0, 0].set_ylabel("Loss")
     axes[0, 0].legend()
     axes[0, 0].grid(True, linestyle="--", alpha=0.4)
-    axes[0, 0].set_title("Loss")
+    axes[0, 0].set_title("Train Loss")
+    if best_epoch is not None:
+        axes[0, 0].axvline(x=best_epoch, color='red', linestyle='--', linewidth=1.5, alpha=0.7, label='Best')
 
-    # Plot 2: IoU per class
-    if not all(np.isnan(iou_iris)):
-        axes[0, 1].plot(epochs, iou_iris, label="IoU Iris", marker="^", color="#31a354", linewidth=2)
-        axes[0, 1].plot(epochs, iou_pupil, label="IoU Pupil", marker="v", color="#756bb1", linewidth=2)
-        axes[0, 1].plot(epochs, val_ious, label="IoU Mean", marker="d", color="#2c7fb8", linewidth=2, linestyle="--")
-    axes[0, 1].set_ylabel("IoU")
-    axes[0, 1].set_ylim(0, 1)
+    # Plot 2: Val Loss
+    if not all(np.isnan(val_losses)):
+        axes[0, 1].plot(epochs, val_losses, label="val loss", marker="s", linewidth=2, color="#ff7f0e")
+    axes[0, 1].set_ylabel("Loss")
+    axes[0, 1].legend()
     axes[0, 1].grid(True, linestyle="--", alpha=0.4)
-    axes[0, 1].legend(loc="lower right")
-    axes[0, 1].set_title("IoU per Class")
+    axes[0, 1].set_title("Validation Loss")
+    if best_epoch is not None:
+        axes[0, 1].axvline(x=best_epoch, color='red', linestyle='--', linewidth=1.5, alpha=0.7, label='Best')
 
-    # Plot 3: Dice scores
+    # Plot 3: IoU per class
+    if not all(np.isnan(iou_iris)):
+        axes[0, 2].plot(epochs, iou_iris, label="IoU Iris", marker="^", color="#31a354", linewidth=2)
+        axes[0, 2].plot(epochs, iou_pupil, label="IoU Pupil", marker="v", color="#756bb1", linewidth=2)
+        axes[0, 2].plot(epochs, val_ious, label="IoU Mean", marker="d", color="#2c7fb8", linewidth=2, linestyle="--")
+    axes[0, 2].set_ylabel("IoU")
+    axes[0, 2].set_ylim(0, 1)
+    axes[0, 2].grid(True, linestyle="--", alpha=0.4)
+    axes[0, 2].legend(loc="lower right")
+    axes[0, 2].set_title("IoU per Class")
+    if best_epoch is not None:
+        axes[0, 2].axvline(x=best_epoch, color='red', linestyle='--', linewidth=1.5, alpha=0.7)
+
+    # Plot 4: Dice scores
     if not all(np.isnan(dice_iris)):
         axes[1, 0].plot(epochs, dice_iris, label="Dice Iris", marker="^", color="#31a354", linewidth=2)
         axes[1, 0].plot(epochs, dice_pupil, label="Dice Pupil", marker="v", color="#756bb1", linewidth=2)
@@ -92,8 +104,10 @@ def render_metrics_plot(metrics: List[Dict[str, Any]], plot_path: Path):
     axes[1, 0].grid(True, linestyle="--", alpha=0.4)
     axes[1, 0].legend(loc="lower right")
     axes[1, 0].set_title("Dice Score per Class")
+    if best_epoch is not None:
+        axes[1, 0].axvline(x=best_epoch, color='red', linestyle='--', linewidth=1.5, alpha=0.7)
 
-    # Plot 4: HD95 distance
+    # Plot 5: HD95 distance
     if not all(np.isnan(hd95_pupil)):
         # Calculate mean HD95 from iris and pupil
         hd95_mean = [(i + p) / 2 if not (np.isnan(i) or np.isnan(p)) else np.nan
@@ -106,6 +120,11 @@ def render_metrics_plot(metrics: List[Dict[str, Any]], plot_path: Path):
     axes[1, 1].grid(True, linestyle="--", alpha=0.4)
     axes[1, 1].legend(loc="upper right")
     axes[1, 1].set_title("95% Hausdorff Distance")
+    if best_epoch is not None:
+        axes[1, 1].axvline(x=best_epoch, color='red', linestyle='--', linewidth=1.5, alpha=0.7)
+
+    # Plot 6: Empty for now (could add center distance or other metric)
+    axes[1, 2].axis('off')
 
     fig.tight_layout()
     plot_path.parent.mkdir(parents=True, exist_ok=True)
@@ -119,10 +138,24 @@ def init_metrics_writer(csv_path: Path):
     writer = csv.writer(csv_file)
     writer.writerow([
         "epoch", "train_loss", "val_loss", "val_iou",
+        # Dice/IoU (overlap)
         "dice_iris", "dice_pupil", "dice_mean",
         "iou_iris", "iou_pupil", "iou_mean",
+        # Precision/Recall (pixel-wise classification)
+        "precision_iris", "recall_iris",
+        "precision_pupil", "recall_pupil",
+        # Center distances
         "center_dist_iris_px", "center_dist_pupil_px",
-        "hd95_iris", "hd95_pupil"
+        # Boundary distances
+        "hd95_iris", "hd95_pupil",
+        "assd_iris", "assd_pupil",
+        "masd_iris", "masd_pupil",
+        # Boundary agreement
+        "boundary_iou_iris", "boundary_iou_pupil",
+        "nsd_iris", "nsd_pupil",
+        # Shape errors
+        "radius_error_iris", "radius_error_pupil",
+        "area_rel_error_iris", "area_rel_error_pupil"
     ])
     return csv_file, writer
 
@@ -524,6 +557,7 @@ def main():
 
     metrics_file, metrics_writer = init_metrics_writer(metrics_csv_path)
     metrics: List[Dict[str, Any]] = []
+    best_epoch = None
     try:
         for ep in range(start_epoch, args.epochs + 1):
             tr_loss = train_one_epoch(model, train_dl, opt, loss_fn, device, epoch=ep)
@@ -547,6 +581,7 @@ def main():
             # Save best checkpoint
             if should_eval and val_iou is not None and val_iou > best_iou:
                 best_iou = val_iou
+                best_epoch = ep
                 ckpt = args.out / "best.pt"
                 torch.save({
                     "model": model.state_dict(),
@@ -603,25 +638,47 @@ def main():
             ]
             if val_metrics is not None:
                 csv_row.extend([
+                    # Dice/IoU
                     f"{val_metrics['dice_iris']:.6f}",
                     f"{val_metrics['dice_pupil']:.6f}",
                     f"{val_metrics['dice_mean']:.6f}",
                     f"{val_metrics['iou_iris']:.6f}",
                     f"{val_metrics['iou_pupil']:.6f}",
                     f"{val_metrics['iou_mean']:.6f}",
+                    # Precision/Recall
+                    f"{val_metrics['precision_iris']:.6f}",
+                    f"{val_metrics['recall_iris']:.6f}",
+                    f"{val_metrics['precision_pupil']:.6f}",
+                    f"{val_metrics['recall_pupil']:.6f}",
+                    # Center distances
                     f"{val_metrics['center_dist_iris_px']:.6f}",
                     f"{val_metrics['center_dist_pupil_px']:.6f}",
+                    # Boundary distances
                     f"{val_metrics['hd95_iris']:.6f}",
                     f"{val_metrics['hd95_pupil']:.6f}",
+                    f"{val_metrics['assd_iris']:.6f}",
+                    f"{val_metrics['assd_pupil']:.6f}",
+                    f"{val_metrics['masd_iris']:.6f}",
+                    f"{val_metrics['masd_pupil']:.6f}",
+                    # Boundary agreement
+                    f"{val_metrics['boundary_iou_iris']:.6f}",
+                    f"{val_metrics['boundary_iou_pupil']:.6f}",
+                    f"{val_metrics['nsd_iris']:.6f}",
+                    f"{val_metrics['nsd_pupil']:.6f}",
+                    # Shape errors
+                    f"{val_metrics['radius_error_iris']:.6f}",
+                    f"{val_metrics['radius_error_pupil']:.6f}",
+                    f"{val_metrics['area_rel_error_iris']:.6f}",
+                    f"{val_metrics['area_rel_error_pupil']:.6f}",
                 ])
             else:
-                csv_row.extend([""] * 10)  # Empty columns for skipped validation
+                csv_row.extend([""] * 26)  # Empty columns for skipped validation (26 new metric columns)
             metrics_writer.writerow(csv_row)
             metrics_file.flush()
 
             # Generate plots every validation epoch (if validation happened)
             if should_eval:
-                render_metrics_plot(metrics, metrics_plot_path)
+                render_metrics_plot(metrics, metrics_plot_path, best_epoch=best_epoch)
 
                 # Generate examples visualization if enabled
                 if hasattr(args, 'show_examples') and args.show_examples > 0:
