@@ -295,9 +295,15 @@ def merge_config_with_args(config: Dict[str, Any], args: argparse.Namespace) -> 
             # Check if this arg was explicitly set (differs from default)
             if getattr(args, key) == defaults.get(key):
                 # Use config value (CLI didn't override it)
+                # Convert string paths to Path objects
+                if key in ('out', 'config', 'resume', 'metrics_csv', 'metrics_plot') and value is not None:
+                    value = Path(value)
                 setattr(args, key, value)
         else:
             # Add new attribute from config
+            # Convert string paths to Path objects
+            if key in ('out', 'config', 'resume', 'metrics_csv', 'metrics_plot') and value is not None:
+                value = Path(value)
             setattr(args, key, value)
 
     return args
