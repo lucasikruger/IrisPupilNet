@@ -60,7 +60,19 @@ python -m irispupilnet.train \
 | `img_size` | int | `160` | Input image size (for square: H=W) |
 | `img_width` | int | `null` | Image width (if different from height, overrides img_size) |
 | `img_height` | int | `null` | Image height (if different from width, overrides img_size) |
-| `out` | str | `runs/mobius_unet_se` | Output directory for checkpoints/logs |
+| `out` | str | `runs/mobius_unet_se` | Base output directory (timestamped subfolder created automatically) |
+
+**Output directory structure:**
+- When you specify `out: runs/my_experiment`, the system automatically creates a timestamped subfolder like `runs/my_experiment/2025-11-19_14-30-45/`
+- This allows you to run multiple experiments with the same base configuration without overwriting results
+- Inside each run folder:
+  - `config.yaml` - Copy of the configuration used for this run
+  - `metrics.csv` - Epoch-by-epoch metrics
+  - `best.pt`, `checkpoint_epoch_XXX.pt` - Model checkpoints
+  - `best_metrics.yaml` - Best epoch metrics (if `save_best_metrics: true`)
+  - `plots/` - Subfolder containing all visualizations
+    - `metrics.png` - Training curves (Loss, IoU, Dice, HD95)
+    - `examples_epoch_XXX.png` - Validation examples (if `show_examples > 0`)
 
 **Note on image dimensions:** Currently, the dataset loader requires square images. Support for `img_width` != `img_height` is prepared but not yet fully implemented. If you specify different width/height, the system will warn you and use `img_size`.
 
@@ -87,7 +99,7 @@ python -m irispupilnet.train \
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `metrics_csv` | str | `null` | Custom path for metrics CSV (null = auto: out/metrics.csv) |
-| `metrics_plot` | str | `null` | Custom path for metrics plot (null = auto: out/metrics.png) |
+| `metrics_plot` | str | `null` | Custom path for metrics plot (null = auto: out/plots/metrics.png) |
 | `log_every` | int | `0` | Log training progress every N batches (0 = disable batch logging) |
 | `save_best_metrics` | bool | `false` | Save best_metrics.yaml with best epoch results |
 | `tensorboard` | bool | `false` | Enable TensorBoard logging (requires tensorboard package) |
@@ -96,6 +108,7 @@ python -m irispupilnet.train \
 - **`log_every`**: Set to a positive number (e.g., 50) to see batch-level progress during training. Useful for debugging or monitoring long training runs. Set to 0 to only see epoch-level summaries.
 - **`save_best_metrics`**: When enabled, saves a separate YAML file with all metrics from the best epoch. Useful for quick reference and experiment comparison.
 - **`tensorboard`**: Enables TensorBoard integration. You can then view training curves in real-time with `tensorboard --logdir runs/`
+- **Plots are now generated every validation epoch** and saved to the `plots/` subfolder automatically
 
 ### Visualization
 
@@ -105,8 +118,17 @@ python -m irispupilnet.train \
 | `show_examples_every` | int | `1` | Generate examples visualization every N epochs |
 
 **Visualization options explained:**
-- **`show_examples`**: When set to a positive number (e.g., 4), generates a visualization showing N random validation samples with their images, ground truth masks, and predicted masks side-by-side. Saved as `examples_epoch_XXX.png` in the output directory.
-- **`show_examples_every`**: Controls how frequently to generate visualizations. Set to 1 to visualize every epoch, or higher values to reduce disk usage for long training runs.
+- **`show_examples`**: When set to a positive number (e.g., 4), generates a visualization showing N random validation samples with their images, ground truth masks, and predicted masks side-by-side. Saved as `plots/examples_epoch_XXX.png`.
+- **`show_examples_every`**: Controls how frequently to generate visualizations. Set to 1 to visualize every validation epoch, or higher values to reduce disk usage for long training runs.
+
+**Metrics Display:**
+The training now shows per-class metrics during training:
+```
+epoch 01 | train 0.7857 | val 0.4771 | IoU iris:0.512 pupil:0.316 mean:0.414 | Dice iris:0.677 pupil:0.455 mean:0.566
+```
+- **IoU (Intersection over Union)**: Shown per class (iris, pupil) and mean
+- **Dice Score**: Shown per class (iris, pupil) and mean
+- All metrics (including HD95, center distance) are saved to `metrics.csv` for detailed analysis
 
 ## Example Configurations
 

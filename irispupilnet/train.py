@@ -1,4 +1,5 @@
 import argparse, csv, sys, yaml
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
@@ -39,6 +40,7 @@ except Exception:
 
 
 def render_metrics_plot(metrics: List[Dict[str, Any]], plot_path: Path):
+    """Render comprehensive metrics plot with all 4 subplots."""
     if not metrics:
         return
 
@@ -52,6 +54,8 @@ def render_metrics_plot(metrics: List[Dict[str, Any]], plot_path: Path):
     dice_pupil = [np.nan if "dice_pupil" not in m else m["dice_pupil"] for m in metrics]
     hd95_pupil = [np.nan if "hd95_pupil" not in m else m["hd95_pupil"] for m in metrics]
     hd95_iris = [np.nan if "hd95_iris" not in m else m["hd95_iris"] for m in metrics]
+    iou_iris = [np.nan if "iou_iris" not in m else m["iou_iris"] for m in metrics]
+    iou_pupil = [np.nan if "iou_pupil" not in m else m["iou_pupil"] for m in metrics]
 
     # Create figure with 4 subplots
     fig, axes = plt.subplots(2, 2, figsize=(12, 8), sharex=True)
@@ -65,14 +69,16 @@ def render_metrics_plot(metrics: List[Dict[str, Any]], plot_path: Path):
     axes[0, 0].grid(True, linestyle="--", alpha=0.4)
     axes[0, 0].set_title("Loss")
 
-    # Plot 2: IoU (original metric)
-    if not all(np.isnan(val_ious)):
-        axes[0, 1].plot(epochs, val_ious, label="IoU (mean)", marker="d", color="#2c7fb8", linewidth=2)
+    # Plot 2: IoU per class
+    if not all(np.isnan(iou_iris)):
+        axes[0, 1].plot(epochs, iou_iris, label="IoU Iris", marker="^", color="#31a354", linewidth=2)
+        axes[0, 1].plot(epochs, iou_pupil, label="IoU Pupil", marker="v", color="#756bb1", linewidth=2)
+        axes[0, 1].plot(epochs, val_ious, label="IoU Mean", marker="d", color="#2c7fb8", linewidth=2, linestyle="--")
     axes[0, 1].set_ylabel("IoU")
     axes[0, 1].set_ylim(0, 1)
     axes[0, 1].grid(True, linestyle="--", alpha=0.4)
     axes[0, 1].legend(loc="lower right")
-    axes[0, 1].set_title("IoU (Iris + Pupil)")
+    axes[0, 1].set_title("IoU per Class")
 
     # Plot 3: Dice scores
     if not all(np.isnan(dice_iris)):
@@ -448,8 +454,19 @@ def main():
     if convert_to_grayscale:
         args.in_channels = 1
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Create timestamped run directory
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    base_out = args.out
+    args.out = base_out / timestamp
     args.out.mkdir(parents=True, exist_ok=True)
+
+    # Save config to run directory
+    config_save_path = args.out / "config.yaml"
+    with open(config_save_path, 'w') as f:
+        yaml.dump(vars(args), f, default_flow_style=False, sort_keys=False)
+    print(f"Saved config to {config_save_path}")
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     device_name = "cpu"
     if device.type == "cuda":
@@ -479,8 +496,12 @@ def main():
         best_iou = resume_info["best_iou"]
         print(f"Resuming from epoch {resume_info['epoch']}, best IoU so far: {best_iou:.4f}")
 
+    # Create plots subfolder
+    plots_dir = args.out / "plots"
+    plots_dir.mkdir(parents=True, exist_ok=True)
+
     metrics_csv_path = args.metrics_csv if args.metrics_csv is not None else (args.out / "metrics.csv")
-    metrics_plot_path = args.metrics_plot if args.metrics_plot is not None else (args.out / "metrics.png")
+    metrics_plot_path = args.metrics_plot if args.metrics_plot is not None else (plots_dir / "metrics.png")
 
     print("Starting training run")
     print(f"  dataset={args.dataset}, csv={args.csv}, data_root={args.data_root}")
@@ -509,9 +530,9 @@ def main():
                 val_loss, val_iou, val_metrics = evaluate(model, val_dl, loss_fn, device, num_classes=args.num_classes, epoch=ep)
             msg = f"epoch {ep:02d} | train {tr_loss:.4f}"
             if should_eval:
-                msg += f" | val {val_loss:.4f} | IoU {val_iou:.3f}"
-                msg += f" | Dice {val_metrics['dice_mean']:.3f}"
-                msg += f" | HD95 pupil {val_metrics['hd95_pupil']:.2f}px"
+                msg += f" | val {val_loss:.4f}"
+                msg += f" | IoU iris:{val_metrics['iou_iris']:.3f} pupil:{val_metrics['iou_pupil']:.3f} mean:{val_iou:.3f}"
+                msg += f" | Dice iris:{val_metrics['dice_iris']:.3f} pupil:{val_metrics['dice_pupil']:.3f} mean:{val_metrics['dice_mean']:.3f}"
             else:
                 msg += " | val skipped"
             print(msg)
@@ -591,14 +612,16 @@ def main():
             metrics_writer.writerow(csv_row)
             metrics_file.flush()
 
-            render_metrics_plot(metrics, metrics_plot_path)
+            # Generate plots every validation epoch (if validation happened)
+            if should_eval:
+                render_metrics_plot(metrics, metrics_plot_path)
 
-            # Generate examples visualization if enabled
-            if hasattr(args, 'show_examples') and args.show_examples > 0:
-                should_show_examples = (ep % args.show_examples_every == 0) if hasattr(args, 'show_examples_every') else True
-                if should_show_examples:
-                    examples_path = args.out / f"examples_epoch_{ep:03d}.png"
-                    show_examples(model, val_dl, device, args.show_examples, examples_path, epoch=ep)
+                # Generate examples visualization if enabled
+                if hasattr(args, 'show_examples') and args.show_examples > 0:
+                    should_show_examples = (ep % args.show_examples_every == 0) if hasattr(args, 'show_examples_every') else True
+                    if should_show_examples:
+                        examples_path = plots_dir / f"examples_epoch_{ep:03d}.png"
+                        show_examples(model, val_dl, device, args.show_examples, examples_path, epoch=ep)
     finally:
         metrics_file.close()
 
