@@ -52,6 +52,7 @@ def render_metrics_plot(metrics: List[Dict[str, Any]], plot_path: Path):
     # Extract new metrics (with NaN for epochs where validation was skipped)
     dice_iris = [np.nan if "dice_iris" not in m else m["dice_iris"] for m in metrics]
     dice_pupil = [np.nan if "dice_pupil" not in m else m["dice_pupil"] for m in metrics]
+    dice_mean = [np.nan if "dice_mean" not in m else m["dice_mean"] for m in metrics]
     hd95_pupil = [np.nan if "hd95_pupil" not in m else m["hd95_pupil"] for m in metrics]
     hd95_iris = [np.nan if "hd95_iris" not in m else m["hd95_iris"] for m in metrics]
     iou_iris = [np.nan if "iou_iris" not in m else m["iou_iris"] for m in metrics]
@@ -84,6 +85,7 @@ def render_metrics_plot(metrics: List[Dict[str, Any]], plot_path: Path):
     if not all(np.isnan(dice_iris)):
         axes[1, 0].plot(epochs, dice_iris, label="Dice Iris", marker="^", color="#31a354", linewidth=2)
         axes[1, 0].plot(epochs, dice_pupil, label="Dice Pupil", marker="v", color="#756bb1", linewidth=2)
+        axes[1, 0].plot(epochs, dice_mean, label="Dice Mean", marker="d", color="#2c7fb8", linewidth=2, linestyle="--")
     axes[1, 0].set_ylabel("Dice Score")
     axes[1, 0].set_xlabel("Epoch")
     axes[1, 0].set_ylim(0, 1)
@@ -93,8 +95,12 @@ def render_metrics_plot(metrics: List[Dict[str, Any]], plot_path: Path):
 
     # Plot 4: HD95 distance
     if not all(np.isnan(hd95_pupil)):
+        # Calculate mean HD95 from iris and pupil
+        hd95_mean = [(i + p) / 2 if not (np.isnan(i) or np.isnan(p)) else np.nan
+                     for i, p in zip(hd95_iris, hd95_pupil)]
         axes[1, 1].plot(epochs, hd95_iris, label="HD95 Iris", marker="^", color="#e6550d", linewidth=2)
         axes[1, 1].plot(epochs, hd95_pupil, label="HD95 Pupil", marker="v", color="#fd8d3c", linewidth=2)
+        axes[1, 1].plot(epochs, hd95_mean, label="HD95 Mean", marker="d", color="#a63603", linewidth=2, linestyle="--")
     axes[1, 1].set_ylabel("HD95 (pixels)")
     axes[1, 1].set_xlabel("Epoch")
     axes[1, 1].grid(True, linestyle="--", alpha=0.4)
@@ -533,6 +539,7 @@ def main():
                 msg += f" | val {val_loss:.4f}"
                 msg += f" | IoU iris:{val_metrics['iou_iris']:.3f} pupil:{val_metrics['iou_pupil']:.3f} mean:{val_iou:.3f}"
                 msg += f" | Dice iris:{val_metrics['dice_iris']:.3f} pupil:{val_metrics['dice_pupil']:.3f} mean:{val_metrics['dice_mean']:.3f}"
+                msg += f" | HD95 iris:{val_metrics['hd95_iris']:.2f} pupil:{val_metrics['hd95_pupil']:.2f}px"
             else:
                 msg += " | val skipped"
             print(msg)

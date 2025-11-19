@@ -124,11 +124,12 @@ python -m irispupilnet.train \
 **Metrics Display:**
 The training now shows per-class metrics during training:
 ```
-epoch 01 | train 0.7857 | val 0.4771 | IoU iris:0.512 pupil:0.316 mean:0.414 | Dice iris:0.677 pupil:0.455 mean:0.566
+epoch 01 | train 0.7857 | val 0.4771 | IoU iris:0.512 pupil:0.316 mean:0.414 | Dice iris:0.677 pupil:0.455 mean:0.566 | HD95 iris:15.23 pupil:12.45px
 ```
 - **IoU (Intersection over Union)**: Shown per class (iris, pupil) and mean
 - **Dice Score**: Shown per class (iris, pupil) and mean
-- All metrics (including HD95, center distance) are saved to `metrics.csv` for detailed analysis
+- **HD95 (95% Hausdorff Distance)**: Shown per class (iris, pupil) in pixels
+- All metrics (including center distance) are saved to `metrics.csv` for detailed analysis
 
 ## Example Configurations
 
