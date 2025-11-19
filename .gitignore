@@ -9,6 +9,11 @@ env/
 ENV/
 *.venv/
 
+# models
+*.onnx
+*.onnx.data
+*.pt
+
 # Dataset files (large binary files)
 data/
 *.h5
