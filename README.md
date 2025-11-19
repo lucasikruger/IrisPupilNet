@@ -11,7 +11,7 @@ Directorio principal
   * `data/irispupileye_mobius` y `data/tayed_mobius` son los conjuntos de imágenes importadas.  
   * `dataset/mobius_output` contiene las versiones procesadas de MOBIUS (CSV + gráficas).  
 - `tools/prepare/` y `tools/analyze/`: scripts de apoyo para crear CSVs (`create_mobius_csv_from_dir.py`), dividir en splits (`split_mobius.py`) y analizar distribuciones de los datos (`plot_mobius_summary.py`).
-- `demo/`: el demo con MediaPipe/OpenCV para visualizar predicciones en tiempo real. Usa `--input-channels` para elegir entre el ONNX entrenado en escala de grises o en RGB.
+- `demo/`: el demo con MediaPipe/OpenCV para visualizar predicciones en tiempo real. Usa `--bw` (grayscale, por defecto) o `--rgb` para seleccionar cómo se alimenta el modelo ONNX.
 - `export/`: herramientas para convertir checkpoints de PyTorch a ONNX (soporte NHWC, configurable en canales). El README de ese submódulo explica cómo ejecutar la exportación.
 
 CSV de dataset

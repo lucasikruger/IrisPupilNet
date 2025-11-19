@@ -1,0 +1,48 @@
+# Training config: Grayscale UNet with full visualization and metrics
+#
+# Features:
+# - Grayscale (BW) input with simple UNet architecture
+# - 20 epochs with checkpoint and evaluation every epoch
+# - All metrics plots enabled (Loss, IoU, Dice, HD95)
+# - Examples visualization showing predictions vs ground truth
+# - Best metrics YAML output for easy comparison
+
+# Dataset
+dataset: csv_seg
+data_root: /path/to/your/data  # UPDATE THIS
+csv: dataset/merged/all_datasets.csv  # UPDATE THIS
+default_format: mobius_3c
+
+# Model architecture
+model: unet_se_small
+num_classes: 3   # 0=bg, 1=iris, 2=pupil
+base: 32
+in_channels: 1   # Grayscale
+color: false     # Convert to grayscale
+
+# Input/Output
+img_size: 160
+out: runs/bw_unet_full_viz
+
+# Training hyperparameters (as requested)
+epochs: 20
+batch_size: 32
+lr: 1.0e-3           # AdamW learning rate
+weight_decay: 1.0e-4 # AdamW weight decay
+workers: 4
+
+# Validation & checkpointing (as requested)
+val_every: 1         # Evaluate every epoch
+save_every: 1        # Save checkpoint every epoch
+resume: null
+
+# Metrics & logging
+metrics_csv: null             # Auto: out/metrics.csv
+metrics_plot: null            # Auto: out/metrics.png
+log_every: 50                 # Log training progress every 50 batches
+save_best_metrics: true       # Save best_metrics.yaml
+tensorboard: true             # Enable TensorBoard logging
+
+# Visualization (NEW)
+show_examples: 4              # Show 4 random validation examples
+show_examples_every: 1        # Generate examples visualization every epoch

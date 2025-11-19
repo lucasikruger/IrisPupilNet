@@ -1,0 +1,41 @@
+# Example config: RGB training with SEResNext-UNet
+
+# Dataset
+dataset: csv_seg
+data_root: /path/to/your/data
+csv: dataset/merged/all_datasets.csv
+default_format: mobius_3c
+
+# Model architecture
+model: seresnext_unet
+num_classes: 3
+base: 32
+in_channels: 3   # RGB
+color: true
+
+# Input/Output
+img_size: 160
+out: runs/rgb_seresnext
+
+# Training hyperparameters
+epochs: 100
+batch_size: 16  # Smaller batch for larger model
+lr: 5.0e-4      # Lower LR for stability
+weight_decay: 1.0e-4
+workers: 4
+
+# Validation & checkpointing
+val_every: 2    # Validate every 2 epochs
+save_every: 20
+resume: null
+
+# Metrics & logging
+metrics_csv: null
+metrics_plot: null
+log_every: 50                 # Log batch progress every 50 batches
+save_best_metrics: true
+tensorboard: true             # Enable TensorBoard for this experiment
+
+# Visualization
+show_examples: 0              # Show N random validation examples (0 = disable)
+show_examples_every: 1        # Generate examples visualization every N epochs

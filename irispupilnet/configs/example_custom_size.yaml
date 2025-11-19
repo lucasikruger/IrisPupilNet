@@ -1,0 +1,47 @@
+# Example config: Custom image dimensions (non-square)
+# Note: Current implementation still requires square images in the dataset loader
+# This is prepared for future support of rectangular images
+
+# Dataset
+dataset: csv_seg
+data_root: /path/to/your/data
+csv: dataset/merged/all_datasets.csv
+default_format: mobius_3c
+
+# Model architecture
+model: unet_se_small
+num_classes: 3
+base: 32
+in_channels: 1
+color: false
+
+# Input/Output - Custom dimensions
+# Option 1: Square images (recommended for now)
+img_size: 160
+
+# Option 2: Non-square images (future support)
+# img_width: 256
+# img_height: 192
+# Note: If you specify both width and height different from each other,
+# the system will warn you and fall back to img_size for now
+
+out: runs/custom_size_experiment
+
+# Training hyperparameters
+epochs: 50
+batch_size: 24  # Adjust based on image size and GPU memory
+lr: 1.0e-3
+weight_decay: 1.0e-4
+workers: 4
+
+# Validation & checkpointing
+val_every: 1
+save_every: 10
+resume: null
+
+# Metrics & logging
+metrics_csv: null
+metrics_plot: null
+log_every: 0
+save_best_metrics: true
+tensorboard: false

@@ -1,15 +1,17 @@
 """
 Export a trained model checkpoint to ONNX (NHWC format).
 
-Usage:
+Simple usage (automatic config from checkpoint):
   python export/export_to_onnx.py \
-    --checkpoint /path/to/best.pt \
-    --out /path/to/out.onnx \
-    --size 160 \
-    --classes 3 \
-    --base 32 \
-    --in-channels 1 \
-    --model unet_se_small
+    --checkpoint runs/experiment/best.pt \
+    --out model.onnx
+
+Advanced usage (override settings):
+  python export/export_to_onnx.py \
+    --checkpoint runs/experiment/best.pt \
+    --out model.onnx \
+    --size 224 \
+    --in-channels 3
 """
 
 from __future__ import annotations
@@ -47,60 +49,125 @@ class NHWCWrapper(torch.nn.Module):
         return y.permute(0, 2, 3, 1)
 
 
+def load_checkpoint_config(checkpoint_path: Path) -> dict:
+    """
+    Load model configuration from checkpoint.
+
+    Returns:
+        dict with keys: model, in_channels, num_classes, base, img_size
+    """
+    print(f"Loading checkpoint: {checkpoint_path}")
+    device = torch.device("cpu")
+    safe_classes = [Path, pathlib.Path, pathlib.PosixPath, type(None)]
+
+    with torch.serialization.safe_globals(safe_classes):
+        checkpoint = torch.load(str(checkpoint_path), map_location=device)
+
+    # Extract config from checkpoint args
+    config = {}
+    if isinstance(checkpoint, dict) and "args" in checkpoint:
+        ckpt_args = checkpoint["args"]
+        config = {
+            "model": ckpt_args.get("model", "unet_se_small"),
+            "in_channels": ckpt_args.get("in_channels", 1),
+            "num_classes": ckpt_args.get("num_classes", 3),
+            "base": ckpt_args.get("base", 32),
+            "img_size": ckpt_args.get("img_size", 160),
+        }
+        print(f"✓ Loaded config from checkpoint:")
+        print(f"  Model: {config['model']}")
+        print(f"  Input channels: {config['in_channels']}")
+        print(f"  Classes: {config['num_classes']}")
+        print(f"  Base: {config['base']}")
+        print(f"  Image size: {config['img_size']}")
+    else:
+        # Fallback defaults if no args in checkpoint
+        print("⚠ No args found in checkpoint, using defaults")
+        config = {
+            "model": "unet_se_small",
+            "in_channels": 1,
+            "num_classes": 3,
+            "base": 32,
+            "img_size": 160,
+        }
+
+    config["checkpoint"] = checkpoint
+    return config
+
+
 def main():
     ap = argparse.ArgumentParser(description="Export checkpoint to ONNX (NHWC)")
     ap.add_argument("--checkpoint", required=True, help="Path to .pt checkpoint")
     ap.add_argument("--out", required=True, help="Output ONNX file path")
-    ap.add_argument("--size", type=int, default=160, help="Input image size (H=W)")
-    ap.add_argument("--classes", type=int, default=3, help="Number of output classes")
-    ap.add_argument("--base", type=int, default=32, help="Base channel count (UNet scaling)")
-    ap.add_argument("--in-channels", type=int, choices=[1, 3], default=1, help="Number of input channels")
-    ap.add_argument("--model", choices=list(MODEL_REGISTRY.keys()), default="unet_se_small",
-                    help="Model registered in irispupilnet.models")
+
+    # Optional overrides (will use checkpoint config if not provided)
+    ap.add_argument("--size", type=int, default=None, help="Override image size (H=W)")
+    ap.add_argument("--classes", type=int, default=None, help="Override number of output classes")
+    ap.add_argument("--base", type=int, default=None, help="Override base channel count")
+    ap.add_argument("--in-channels", type=int, choices=[1, 3], default=None, help="Override input channels")
+    ap.add_argument("--model", choices=list(MODEL_REGISTRY.keys()), default=None,
+                    help="Override model architecture")
     args = ap.parse_args()
 
-    ckpt_path = pathlib.Path(args.checkpoint)
+    ckpt_path = Path(args.checkpoint)
     if not ckpt_path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
 
-    device = torch.device("cpu")
-    safe_classes = [pathlib.Path, pathlib.PosixPath]
-    with torch.serialization.safe_globals(safe_classes):
-        checkpoint = torch.load(str(ckpt_path), map_location=device)
+    # Load config from checkpoint
+    config = load_checkpoint_config(ckpt_path)
+    checkpoint = config.pop("checkpoint")
 
-    model_name = args.model
-    model_kwargs = {
-        "in_channels": args.in_channels,
-        "n_classes": args.classes,
-        "base": args.base,
-    }
-    ckpt_args = checkpoint.get("args", {})
-    if isinstance(ckpt_args, dict):
-        model_name = ckpt_args.get("model", model_name)
-        model_kwargs["in_channels"] = ckpt_args.get("in_channels", model_kwargs["in_channels"])
-        model_kwargs["n_classes"] = ckpt_args.get("num_classes", model_kwargs["n_classes"])
-        model_kwargs["base"] = ckpt_args.get("base", model_kwargs["base"])
+    # Apply CLI overrides
+    if args.model is not None:
+        config["model"] = args.model
+        print(f"  Override: model = {args.model}")
+    if args.in_channels is not None:
+        config["in_channels"] = args.in_channels
+        print(f"  Override: in_channels = {args.in_channels}")
+    if args.classes is not None:
+        config["num_classes"] = args.classes
+        print(f"  Override: num_classes = {args.classes}")
+    if args.base is not None:
+        config["base"] = args.base
+        print(f"  Override: base = {args.base}")
+    if args.size is not None:
+        config["img_size"] = args.size
+        print(f"  Override: img_size = {args.size}")
 
+    # Build model
+    model_name = config["model"]
     if model_name not in MODEL_REGISTRY:
         raise ValueError(f"Unknown model {model_name}. Registered: {list(MODEL_REGISTRY.keys())}")
 
     model_ctor = MODEL_REGISTRY[model_name]
-    model = model_ctor(**model_kwargs)
+    model = model_ctor(
+        in_channels=config["in_channels"],
+        n_classes=config["num_classes"],
+        base=config["base"]
+    )
 
+    # Load weights
     if isinstance(checkpoint, dict) and "model" in checkpoint:
         state_dict = checkpoint["model"]
-        print("Loaded checkpoint with metadata")
-        if "args" in checkpoint:
-            print(f"  Checkpoint args: {checkpoint['args']}")
     else:
         state_dict = checkpoint
-        print("Loaded state dict only")
 
     model.load_state_dict(state_dict, strict=True)
     model.eval()
+    print("✓ Model weights loaded")
+
+    # Wrap for NHWC
     wrapped = NHWCWrapper(model)
 
-    dummy_input = torch.randn(1, args.size, args.size, args.in_channels, device=device)
+    # Export to ONNX
+    device = torch.device("cpu")
+    img_size = config["img_size"]
+    in_channels = config["in_channels"]
+    num_classes = config["num_classes"]
+
+    dummy_input = torch.randn(1, img_size, img_size, in_channels, device=device)
+
+    print(f"\nExporting to ONNX...")
     torch.onnx.export(
         wrapped,
         dummy_input,
@@ -112,9 +179,12 @@ def main():
         do_constant_folding=True,
     )
 
-    print(f"Exported ONNX (NHWC) -> {args.out}")
-    print(f"  Input shape:  [batch, {args.size}, {args.size}, {args.in_channels}]")
-    print(f"  Output shape: [batch, {args.size}, {args.size}, {args.classes}]")
+    print(f"\n✓ Successfully exported ONNX model!")
+    print(f"  Output file: {args.out}")
+    print(f"  Input shape:  [batch, {img_size}, {img_size}, {in_channels}] (NHWC)")
+    print(f"  Output shape: [batch, {img_size}, {img_size}, {num_classes}] (NHWC)")
+    print(f"\nUsage with demo:")
+    print(f"  python demo/webcam_demo.py --model {args.out}")
 
 
 if __name__ == "__main__":

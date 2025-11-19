@@ -1,13 +1,40 @@
-dataset: mobius
-data_root: /content/data   # or your local path
-model: unet_se_small
-img_size: 160
-in_channels: 3
-num_classes: 3   # bg, iris, pupil
-base: 32
-batch_size: 32
+# Training configuration for IrisPupilNet
+
+# Dataset
+dataset: csv_seg
+data_root: /content/data   # Base directory for dataset
+csv: dataset/merged/all_datasets.csv  # Path to CSV file
+default_format: mobius_3c  # Mask format (mobius_3c, tayed_3c, etc.)
+
+# Model architecture
+model: unet_se_small  # unet_se_small, seresnext_unet, baseline
+num_classes: 3   # 0=bg, 1=iris, 2=pupil
+base: 32  # Base channel count
+in_channels: 3  # Input channels (1=grayscale, 3=RGB)
+color: false  # If true, use RGB; if false, use grayscale (overrides in_channels)
+
+# Input/Output
+img_size: 160  # Input image size (for square images: H=W)
+# Alternatively, specify width and height separately:
+# img_width: 160
+# img_height: 160
+out: runs/mobius_unet_se  # Output directory for checkpoints and logs
+
+# Training hyperparameters
 epochs: 20
-lr: 1.0e-3
-weight_decay: 1.0e-4
-workers: 2
-out: runs/mobius_unet_se
+batch_size: 32
+lr: 1.0e-3  # Learning rate
+weight_decay: 1.0e-4  # AdamW weight decay
+workers: 2  # Number of data loading workers
+
+# Validation & checkpointing
+val_every: 1  # Run validation every N epochs
+save_every: 5  # Save checkpoint every N epochs (0 = only save best)
+resume: null  # Path to checkpoint to resume from (null = start from scratch)
+
+# Metrics & logging
+metrics_csv: null  # Custom path for metrics CSV (null = auto: out/metrics.csv)
+metrics_plot: null  # Custom path for metrics plot (null = auto: out/metrics.png)
+log_every: 1  # Log training progress every N batches (0 = disable batch logging)
+save_best_metrics: true  # Save a separate best_metrics.yaml with best epoch results
+tensorboard: false  # Enable TensorBoard logging (requires tensorboard package)

@@ -1,0 +1,41 @@
+# Example config: Fine-tuning from pretrained checkpoint
+
+# Dataset
+dataset: csv_seg
+data_root: /path/to/your/data
+csv: dataset/new_dataset.csv
+default_format: mobius_3c
+
+# Model architecture
+model: unet_se_small
+num_classes: 3
+base: 32
+in_channels: 1
+color: false
+
+# Input/Output
+img_size: 160
+out: runs/finetuned_model
+
+# Training hyperparameters
+epochs: 30
+batch_size: 32
+lr: 1.0e-4      # Lower LR for fine-tuning
+weight_decay: 1.0e-4
+workers: 4
+
+# Validation & checkpointing
+val_every: 1
+save_every: 5
+resume: runs/pretrained_model/best.pt  # Resume from pretrained checkpoint
+
+# Metrics & logging
+metrics_csv: null
+metrics_plot: null
+log_every: 0
+save_best_metrics: true
+tensorboard: false
+
+# Visualization
+show_examples: 0              # Show N random validation examples (0 = disable)
+show_examples_every: 1        # Generate examples visualization every N epochs

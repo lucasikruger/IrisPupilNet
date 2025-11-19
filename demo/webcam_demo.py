@@ -4,7 +4,7 @@ Eye & Iris/Pupil Demo (OpenCV + MediaPipe FaceMesh + optional ONNX)
 Features
 - Default MIRROR preview (use --no-mirror to disable).
 - Draws a head bounding box + both eye boxes on the main camera window.
-- If --model is provided, runs ONNX segmentation (NHWC [1,160,160,3], [0,1]).
+- If --model is provided, runs ONNX segmentation with auto-detected config.
 - Opens a second "Eyes Grid" window:
     Top-left  : Left eye (no seg)
     Top-right : Right eye (no seg)
@@ -19,10 +19,14 @@ Install
     # optional for segmentation:
     pip install onnxruntime    # or onnxruntime-gpu if you have CUDA
 
-Run
-    python eyes_demo.py             # no model, just boxes + grid (bottom shows "no model")
-    python eyes_demo.py --model /path/to/iris_pupil_unet_160.onnx
-    python eyes_demo.py --no-mirror
+Simple Usage (auto-detects config from model)
+    python demo/webcam_demo.py
+    python demo/webcam_demo.py --model model.onnx
+    python demo/webcam_demo.py --model runs/experiment/model.onnx --no-mirror
+
+Advanced Usage (with manual overrides)
+    python demo/webcam_demo.py --model model.onnx --rgb
+    python demo/webcam_demo.py --model model.onnx --bw --img-size 224
 """
 
 import argparse, sys, cv2, numpy as np
@@ -44,7 +48,7 @@ C_EYE  = (255,200,0)   # eye boxes
 C_HEAD = (0,200,255)   # head box
 C_TXT  = (255,255,255)
 
-IMG_SIZE = 160  # model input size (HxW)
+DEFAULT_IMG_SIZE = 160  # default model input size (HxW)
 
 def bbox_from_landmarks(lm, idxs, W, H, pad=0.25):
     xs, ys = [], []
@@ -72,7 +76,7 @@ def head_bbox(lm, W, H, pad=0.15):
     w = min(W-x, w+2*px); h = min(H-y, h+2*py)
     return (x,y,w,h)
 
-def crop_resize_bgr(frame, rect, size=IMG_SIZE):
+def crop_resize_bgr(frame, rect, size):
     x, y, w, h = rect
     crop = frame[y:y+h, x:x+w, :]
     if crop.size == 0:
@@ -80,14 +84,41 @@ def crop_resize_bgr(frame, rect, size=IMG_SIZE):
     return cv2.resize(crop, (size, size), interpolation=cv2.INTER_LINEAR)
 
 def load_onnx_session(model_path):
+    """
+    Load ONNX session and automatically detect input shape and channels.
+
+    Returns:
+        tuple: (session, img_size, input_channels)
+    """
     if ort is None:
         raise RuntimeError("onnxruntime not installed. Run: pip install onnxruntime")
     # Try GPU, fall back to CPU
     providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
     try:
-        return ort.InferenceSession(str(model_path), providers=providers)
+        session = ort.InferenceSession(str(model_path), providers=providers)
     except Exception:
-        return ort.InferenceSession(str(model_path), providers=['CPUExecutionProvider'])
+        session = ort.InferenceSession(str(model_path), providers=['CPUExecutionProvider'])
+
+    # Auto-detect input shape: expected [batch, height, width, channels] (NHWC)
+    input_shape = session.get_inputs()[0].shape
+    if len(input_shape) == 4:
+        _, height, width, channels = input_shape
+        # Handle dynamic batch dimension
+        if isinstance(height, str):
+            height = DEFAULT_IMG_SIZE
+        if isinstance(width, str):
+            width = DEFAULT_IMG_SIZE
+        if isinstance(channels, str):
+            channels = 1
+        img_size = height  # Assuming square images
+        input_channels = channels
+        print(f"  Detected input shape: [batch, {height}, {width}, {channels}]")
+    else:
+        print(f"  Warning: Unexpected input shape {input_shape}, using defaults")
+        img_size = DEFAULT_IMG_SIZE
+        input_channels = 1
+
+    return session, img_size, input_channels
 
 def run_segmentation(sess, crop_bgr, input_channels=1):
     """crop_bgr: 160x160x3 BGR -> [160,160] mask 0:bg,1:iris,2:pupil"""
@@ -137,8 +168,16 @@ def main():
     ap.add_argument("--no-mirror", action="store_true", help="disable selfie mirror view")
     ap.add_argument("--model", type=str, default="", help="path to ONNX model (optional)")
     ap.add_argument("--tile", type=int, default=240, help="per-tile size for grid window")
-    ap.add_argument("--input-channels", type=int, choices=[1,3], default=1,
-                    help="Segmentation model input channels (default 1 for grayscale)")
+
+    # Optional overrides (auto-detected from model if not provided)
+    group = ap.add_mutually_exclusive_group()
+    group.add_argument("--rgb", dest="input_channels", action="store_const", const=3,
+                       help="Override: Run segmentation with RGB input (3 channels)")
+    group.add_argument("--bw", dest="input_channels", action="store_const", const=1,
+                       help="Override: Run segmentation with grayscale input (1 channel)")
+    ap.set_defaults(input_channels=None)  # Auto-detect if None
+    ap.add_argument("--img-size", type=int, default=None,
+                    help="Override: Model input size (HxW), auto-detected if not provided")
     args = ap.parse_args()
 
     # MediaPipe FaceMesh
@@ -154,12 +193,30 @@ def main():
     cap.set(cv2.CAP_PROP_FRAME_WIDTH,  1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
-    # Optional model
+    # Optional model - auto-detect config
     session = None
+    img_size = args.img_size or DEFAULT_IMG_SIZE
+    input_channels = args.input_channels or 1
+
     if args.model:
         try:
-            session = load_onnx_session(args.model)
+            session, detected_size, detected_channels = load_onnx_session(args.model)
             print(f"Loaded ONNX model: {args.model}")
+
+            # Use detected values if not overridden by CLI
+            if args.img_size is None:
+                img_size = detected_size
+                print(f"  Using detected image size: {img_size}")
+            else:
+                print(f"  Using CLI override image size: {img_size}")
+
+            if args.input_channels is None:
+                input_channels = detected_channels
+                channel_type = "RGB" if input_channels == 3 else "grayscale"
+                print(f"  Using detected input channels: {input_channels} ({channel_type})")
+            else:
+                channel_type = "RGB" if input_channels == 3 else "grayscale"
+                print(f"  Using CLI override input channels: {input_channels} ({channel_type})")
         except Exception as e:
             print(f"Could not load model: {e}")
 
@@ -197,26 +254,26 @@ def main():
             cv2.rectangle(frame, (x,y), (x+bw, y+bh), C_EYE, 2)
 
         # crops
-        left_crop  = crop_resize_bgr(frame, left_rect,  IMG_SIZE)
-        right_crop = crop_resize_bgr(frame, right_rect, IMG_SIZE)
+        left_crop  = crop_resize_bgr(frame, left_rect,  img_size)
+        right_crop = crop_resize_bgr(frame, right_rect, img_size)
 
         # build grid tiles
-        tl = label_tile(left_crop  if left_crop  is not None else np.zeros((IMG_SIZE,IMG_SIZE,3), np.uint8), "Left eye")
-        tr = label_tile(right_crop if right_crop is not None else np.zeros((IMG_SIZE,IMG_SIZE,3), np.uint8), "Right eye")
+        tl = label_tile(left_crop  if left_crop  is not None else np.zeros((img_size,img_size,3), np.uint8), "Left eye")
+        tr = label_tile(right_crop if right_crop is not None else np.zeros((img_size,img_size,3), np.uint8), "Right eye")
 
         if session is not None and left_crop is not None:
-            l_mask = run_segmentation(session, left_crop, input_channels=args.input_channels)
+            l_mask = run_segmentation(session, left_crop, input_channels=input_channels)
             bl_img = overlay_mask_on_image(left_crop, l_mask) if l_mask is not None else left_crop
             bl = label_tile(bl_img, "Left seg")
         else:
-            bl = label_tile(np.zeros((IMG_SIZE,IMG_SIZE,3), np.uint8), "Left seg (no model)")
+            bl = label_tile(np.zeros((img_size,img_size,3), np.uint8), "Left seg (no model)")
 
         if session is not None and right_crop is not None:
-            r_mask = run_segmentation(session, right_crop, input_channels=args.input_channels)
+            r_mask = run_segmentation(session, right_crop, input_channels=input_channels)
             br_img = overlay_mask_on_image(right_crop, r_mask) if r_mask is not None else right_crop
             br = label_tile(br_img, "Right seg")
         else:
-            br = label_tile(np.zeros((IMG_SIZE,IMG_SIZE,3), np.uint8), "Right seg (no model)")
+            br = label_tile(np.zeros((img_size,img_size,3), np.uint8), "Right seg (no model)")
 
         grid = make_grid(tl, tr, bl, br, tile_wh=(args.tile, args.tile))
 
