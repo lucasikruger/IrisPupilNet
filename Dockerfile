@@ -18,9 +18,10 @@ RUN python3 -m pip install --extra-index-url https://download.pytorch.org/whl/cu
     torch==2.1.0+cu118 torchvision==0.16.0+cu118 torchaudio==2.1.0+cu118
 
 # Install IrisPupilNet core dependencies
+# Note: NumPy must be <2.0 for PyTorch 2.1 compatibility
 RUN python3 -m pip install \
+    'numpy>=1.24.0,<2.0' \
     matplotlib \
-    numpy>=1.24.0 \
     pandas>=2.0.0 \
     opencv-python>=4.8.0 \
     albumentations>=1.3.0 \
