@@ -25,6 +25,9 @@ onnx>=1.14.0
 onnxruntime>=1.16.0
 onnxscript
 
+# Optional: TensorBoard Logging
+# tensorboard>=2.14.0  # Uncomment to enable tensorboard logging
+
 # Development (optional - see requirements-dev.txt)
 # pytest>=7.4.0
 # black>=23.0.0
