@@ -9,8 +9,8 @@
 
 # Dataset
 dataset: csv_seg
-data_root: /path/to/your/data  # UPDATE THIS
-csv: dataset/merged/all_datasets.csv  # UPDATE THIS
+data_root: /data/data  # UPDATE THIS
+csv: /data/dataset/mobius_dataset_split.csv  # UPDATE THIS
 default_format: mobius_3c
 
 # Model architecture
