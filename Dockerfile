@@ -1,17 +1,13 @@
-FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu20.04
+FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install Python 3.10 and base packages
+# Install Python 3.10 and base packages (Ubuntu 22.04 has Python 3.10 by default)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    software-properties-common \
- && add-apt-repository ppa:deadsnakes/ppa \
- && apt-get update && apt-get install -y --no-install-recommends \
-    python3.10 python3.10-dev python3.10-distutils python3-pip \
+    python3 python3-dev python3-pip \
     ca-certificates git wget vim curl \
     libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev \
- && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 \
- && update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1 \
+ && ln -sf /usr/bin/python3 /usr/bin/python \
  && rm -rf /var/lib/apt/lists/*
 
 # Upgrade pip
