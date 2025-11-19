@@ -262,22 +262,25 @@ def hd95_for_class(pred: np.ndarray, target: np.ndarray, class_id: int) -> float
 
     Returns:
         HD95 distance in pixels. Returns 0.0 if both masks empty,
-        1e6 if only one mask is empty.
+        np.nan if only one mask is empty (cannot compute HD95).
     """
     pred_mask = (pred == class_id).astype(bool)
     target_mask = (target == class_id).astype(bool)
 
+    # Case 1: both masks empty → no structure in GT or pred, consider perfect
     if not pred_mask.any() and not target_mask.any():
         return 0.0
+
+    # Case 2: only one mask is empty → cannot compute HD95, return NaN
     if not pred_mask.any() or not target_mask.any():
-        return 1e6  # sentinel for missing mask
+        return float("nan")
 
     pred_boundary = extract_boundary(pred_mask)
     target_boundary = extract_boundary(target_mask)
 
     # Distance transform: distances from any pixel to nearest boundary pixel
-    dt_pred = distance_transform_edt(~pred_boundary)
-    dt_target = distance_transform_edt(~target_boundary)
+    dt_pred = distance_transform_edt(np.logical_not(pred_boundary))
+    dt_target = distance_transform_edt(np.logical_not(target_boundary))
 
     # Distances: pred→target and target→pred
     pred_to_target = dt_target[pred_boundary]
@@ -292,7 +295,8 @@ def hd95_for_class(pred: np.ndarray, target: np.ndarray, class_id: int) -> float
 
 def hd95_batch(logits: torch.Tensor, target: torch.Tensor) -> Dict[str, float]:
     """
-    Compute mean HD95 for iris and pupil over a batch.
+    Compute mean HD95 for iris and pupil over a batch, ignoring cases
+    where one of the masks is empty (NaN values).
 
     Args:
         logits: (B, C, H, W) model output logits
@@ -308,12 +312,21 @@ def hd95_batch(logits: torch.Tensor, target: torch.Tensor) -> Dict[str, float]:
     hd_pupil = []
 
     for i in range(pred.shape[0]):
-        hd_iris.append(hd95_for_class(pred[i], gt[i], class_id=1))
-        hd_pupil.append(hd95_for_class(pred[i], gt[i], class_id=2))
+        h_i = hd95_for_class(pred[i], gt[i], class_id=1)
+        h_p = hd95_for_class(pred[i], gt[i], class_id=2)
+        hd_iris.append(h_i)
+        hd_pupil.append(h_p)
+
+    hd_iris = np.array(hd_iris, dtype=float)
+    hd_pupil = np.array(hd_pupil, dtype=float)
+
+    # Use nanmean to ignore NaN values (cases where mask is missing)
+    iris_mean = float(np.nanmean(hd_iris)) if not np.all(np.isnan(hd_iris)) else 0.0
+    pupil_mean = float(np.nanmean(hd_pupil)) if not np.all(np.isnan(hd_pupil)) else 0.0
 
     return {
-        "hd95_iris": float(np.mean(hd_iris)),
-        "hd95_pupil": float(np.mean(hd_pupil)),
+        "hd95_iris": iris_mean,
+        "hd95_pupil": pupil_mean,
     }
 
 
