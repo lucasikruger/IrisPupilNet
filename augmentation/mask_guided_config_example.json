@@ -1,0 +1,11 @@
+{
+    "images_dir": "data/images",
+    "masks_dir": "data/masks",
+    "out_dir": "data/mask_guided_output",
+    "prompt": "colorize this grayscale eye image with realistic brown eyes, natural skin tones, and detailed iris patterns",
+    "variants": 2,
+    "temperature": 0.7,
+    "mask_opacity": 0.4,
+    "show_legend": false,
+    "model": "gemini-2.5-flash-image"
+}

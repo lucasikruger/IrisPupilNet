@@ -9,3 +9,4 @@ def register_dataset(name: str):
 
 # Import dataset modules to trigger registration
 from . import csv_seg
+from . import simple_dataset  # Simplified grayscale-only dataset with adapters

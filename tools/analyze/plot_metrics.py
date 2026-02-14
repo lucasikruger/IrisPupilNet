@@ -115,6 +115,142 @@ def plot_loss(df: pd.DataFrame, out_path: Path):
     print(f"Saved loss plot to {out_path}")
 
 
+def plot_precision_recall(df: pd.DataFrame, out_path: Path):
+    """Plot Precision and Recall scores over epochs."""
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+
+    # Plot 1: Precision
+    if "precision_iris" in df.columns:
+        axes[0].plot(df["epoch"], df["precision_iris"], label="Precision Iris", marker="^", linewidth=2, markersize=6, color="#31a354")
+        axes[0].plot(df["epoch"], df["precision_pupil"], label="Precision Pupil", marker="v", linewidth=2, markersize=6, color="#756bb1")
+    axes[0].set_xlabel("Epoch", fontsize=12)
+    axes[0].set_ylabel("Precision", fontsize=12)
+    axes[0].set_ylim(0, 1)
+    axes[0].set_title("Precision per Class Over Training", fontsize=14, fontweight="bold")
+    axes[0].legend(fontsize=11)
+    axes[0].grid(True, linestyle="--", alpha=0.4)
+
+    # Plot 2: Recall
+    if "recall_iris" in df.columns:
+        axes[1].plot(df["epoch"], df["recall_iris"], label="Recall Iris", marker="^", linewidth=2, markersize=6, color="#31a354")
+        axes[1].plot(df["epoch"], df["recall_pupil"], label="Recall Pupil", marker="v", linewidth=2, markersize=6, color="#756bb1")
+    axes[1].set_xlabel("Epoch", fontsize=12)
+    axes[1].set_ylabel("Recall", fontsize=12)
+    axes[1].set_ylim(0, 1)
+    axes[1].set_title("Recall per Class Over Training", fontsize=14, fontweight="bold")
+    axes[1].legend(fontsize=11)
+    axes[1].grid(True, linestyle="--", alpha=0.4)
+
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved Precision-Recall plot to {out_path}")
+
+
+def plot_boundary_metrics(df: pd.DataFrame, out_path: Path):
+    """Plot boundary-related metrics (ASSD, MASD, NSD, Boundary IoU) over epochs."""
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+    # Plot 1: ASSD
+    if "assd_iris" in df.columns:
+        axes[0, 0].plot(df["epoch"], df["assd_iris"], label="ASSD Iris", marker="^", linewidth=2, markersize=6, color="#e6550d")
+        axes[0, 0].plot(df["epoch"], df["assd_pupil"], label="ASSD Pupil", marker="v", linewidth=2, markersize=6, color="#fd8d3c")
+    axes[0, 0].set_xlabel("Epoch", fontsize=11)
+    axes[0, 0].set_ylabel("ASSD (pixels)", fontsize=11)
+    axes[0, 0].set_title("Average Symmetric Surface Distance", fontsize=12, fontweight="bold")
+    axes[0, 0].legend(fontsize=10)
+    axes[0, 0].grid(True, linestyle="--", alpha=0.4)
+
+    # Plot 2: MASD
+    if "masd_iris" in df.columns:
+        axes[0, 1].plot(df["epoch"], df["masd_iris"], label="MASD Iris", marker="^", linewidth=2, markersize=6, color="#e6550d")
+        axes[0, 1].plot(df["epoch"], df["masd_pupil"], label="MASD Pupil", marker="v", linewidth=2, markersize=6, color="#fd8d3c")
+    axes[0, 1].set_xlabel("Epoch", fontsize=11)
+    axes[0, 1].set_ylabel("MASD (pixels)", fontsize=11)
+    axes[0, 1].set_title("Maximum Average Surface Distance", fontsize=12, fontweight="bold")
+    axes[0, 1].legend(fontsize=10)
+    axes[0, 1].grid(True, linestyle="--", alpha=0.4)
+
+    # Plot 3: NSD
+    if "nsd_iris" in df.columns:
+        axes[1, 0].plot(df["epoch"], df["nsd_iris"], label="NSD Iris", marker="^", linewidth=2, markersize=6, color="#31a354")
+        axes[1, 0].plot(df["epoch"], df["nsd_pupil"], label="NSD Pupil", marker="v", linewidth=2, markersize=6, color="#756bb1")
+    axes[1, 0].set_xlabel("Epoch", fontsize=11)
+    axes[1, 0].set_ylabel("NSD", fontsize=11)
+    axes[1, 0].set_ylim(0, 1)
+    axes[1, 0].set_title("Normalized Surface Dice", fontsize=12, fontweight="bold")
+    axes[1, 0].legend(fontsize=10)
+    axes[1, 0].grid(True, linestyle="--", alpha=0.4)
+
+    # Plot 4: Boundary IoU
+    if "boundary_iou_iris" in df.columns:
+        axes[1, 1].plot(df["epoch"], df["boundary_iou_iris"], label="Boundary IoU Iris", marker="^", linewidth=2, markersize=6, color="#31a354")
+        axes[1, 1].plot(df["epoch"], df["boundary_iou_pupil"], label="Boundary IoU Pupil", marker="v", linewidth=2, markersize=6, color="#756bb1")
+    axes[1, 1].set_xlabel("Epoch", fontsize=11)
+    axes[1, 1].set_ylabel("Boundary IoU", fontsize=11)
+    axes[1, 1].set_ylim(0, 1)
+    axes[1, 1].set_title("Boundary IoU", fontsize=12, fontweight="bold")
+    axes[1, 1].legend(fontsize=10)
+    axes[1, 1].grid(True, linestyle="--", alpha=0.4)
+
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved boundary metrics plot to {out_path}")
+
+
+def plot_shape_metrics(df: pd.DataFrame, out_path: Path):
+    """Plot shape error metrics (radius error, area relative error) over epochs."""
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+
+    # Plot 1: Radius Error
+    if "radius_error_iris" in df.columns:
+        axes[0].plot(df["epoch"], df["radius_error_iris"], label="Radius Error Iris", marker="^", linewidth=2, markersize=6, color="#e6550d")
+        axes[0].plot(df["epoch"], df["radius_error_pupil"], label="Radius Error Pupil", marker="v", linewidth=2, markersize=6, color="#fd8d3c")
+    axes[0].set_xlabel("Epoch", fontsize=12)
+    axes[0].set_ylabel("Radius Error (pixels)", fontsize=12)
+    axes[0].set_title("Radius Error Over Training", fontsize=14, fontweight="bold")
+    axes[0].legend(fontsize=11)
+    axes[0].grid(True, linestyle="--", alpha=0.4)
+
+    # Plot 2: Area Relative Error
+    if "area_rel_error_iris" in df.columns:
+        axes[1].plot(df["epoch"], df["area_rel_error_iris"], label="Area Rel Error Iris", marker="^", linewidth=2, markersize=6, color="#e6550d")
+        axes[1].plot(df["epoch"], df["area_rel_error_pupil"], label="Area Rel Error Pupil", marker="v", linewidth=2, markersize=6, color="#fd8d3c")
+    axes[1].set_xlabel("Epoch", fontsize=12)
+    axes[1].set_ylabel("Relative Area Error", fontsize=12)
+    axes[1].set_title("Area Relative Error Over Training", fontsize=14, fontweight="bold")
+    axes[1].legend(fontsize=11)
+    axes[1].grid(True, linestyle="--", alpha=0.4)
+
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved shape metrics plot to {out_path}")
+
+
+def plot_ap_metrics(df: pd.DataFrame, out_path: Path):
+    """Plot Average Precision (AP) metrics over epochs."""
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    if "ap_iris" in df.columns:
+        ax.plot(df["epoch"], df["ap_iris"], label="AP Iris", marker="^", linewidth=2, markersize=6, color="#31a354")
+        ax.plot(df["epoch"], df["ap_pupil"], label="AP Pupil", marker="v", linewidth=2, markersize=6, color="#756bb1")
+        ax.plot(df["epoch"], df["map"], label="mAP (Mean AP)", marker="o", linewidth=2, markersize=6, color="#3182bd", linestyle="--")
+
+    ax.set_xlabel("Epoch", fontsize=12)
+    ax.set_ylabel("Average Precision (AP)", fontsize=12)
+    ax.set_ylim(0, 1)
+    ax.set_title("Average Precision per Class Over Training", fontsize=14, fontweight="bold")
+    ax.legend(fontsize=11)
+    ax.grid(True, linestyle="--", alpha=0.4)
+
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved AP metrics plot to {out_path}")
+
+
 def plot_all_metrics_combined(df: pd.DataFrame, out_path: Path):
     """Create a comprehensive figure with all metrics."""
     fig, axes = plt.subplots(2, 3, figsize=(16, 10))
@@ -214,11 +350,30 @@ def main():
     if args.combined_only:
         plot_all_metrics_combined(df, args.out / "all_metrics_combined.png")
     else:
+        # Basic metrics
         plot_loss(df, args.out / "loss.png")
         plot_dice(df, args.out / "dice.png")
         plot_iou(df, args.out / "iou.png")
         plot_center_distance(df, args.out / "center_distance.png")
         plot_hd95(df, args.out / "hd95.png")
+
+        # Precision-Recall metrics
+        if "precision_iris" in df.columns:
+            plot_precision_recall(df, args.out / "precision_recall.png")
+
+        # Boundary metrics
+        if "assd_iris" in df.columns:
+            plot_boundary_metrics(df, args.out / "boundary_metrics.png")
+
+        # Shape metrics
+        if "radius_error_iris" in df.columns:
+            plot_shape_metrics(df, args.out / "shape_metrics.png")
+
+        # Average Precision metrics
+        if "ap_iris" in df.columns:
+            plot_ap_metrics(df, args.out / "ap_metrics.png")
+
+        # Combined overview
         plot_all_metrics_combined(df, args.out / "all_metrics_combined.png")
 
     print(f"\nAll plots saved to {args.out}/")

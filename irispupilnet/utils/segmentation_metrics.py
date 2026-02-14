@@ -819,11 +819,154 @@ def shape_errors_batch(logits: torch.Tensor, target: torch.Tensor) -> Dict[str, 
 
 
 # ============================================================================
+# Precision-Recall curves and AP (Average Precision)
+# ============================================================================
+
+def precision_recall_curve_for_class(logits: torch.Tensor, target: torch.Tensor, class_id: int, num_thresholds: int = 100) -> Dict[str, np.ndarray]:
+    """
+    Compute Precision-Recall curve for a specific class by varying probability threshold.
+
+    For each threshold t ∈ [0, 1]:
+    - Predicted class = class_id if P(class_id) >= t
+    - Compute Precision, Recall at threshold t
+
+    Args:
+        logits: (B, C, H, W) model output logits
+        target: (B, H, W) ground truth labels
+        class_id: which class to compute for (1=iris, 2=pupil)
+        num_thresholds: number of threshold points to evaluate (default 100)
+
+    Returns:
+        Dictionary with keys:
+        - thresholds: (num_thresholds,) array of threshold values
+        - precision: (num_thresholds,) array of precision at each threshold
+        - recall: (num_thresholds,) array of recall at each threshold
+        - f1: (num_thresholds,) array of F1 score at each threshold
+    """
+    # Convert logits to probabilities
+    probs = F.softmax(logits, dim=1)  # (B, C, H, W)
+    class_probs = probs[:, class_id, :, :].cpu().numpy()  # (B, H, W)
+    target_np = target.cpu().numpy()  # (B, H, W)
+
+    # Flatten all batches
+    class_probs_flat = class_probs.flatten()
+    target_flat = target_np.flatten()
+    target_binary = (target_flat == class_id).astype(np.int32)
+
+    # Define thresholds
+    thresholds = np.linspace(0, 1, num_thresholds)
+    precision_list = []
+    recall_list = []
+    f1_list = []
+
+    eps = 1e-6
+
+    for threshold in thresholds:
+        pred_binary = (class_probs_flat >= threshold).astype(np.int32)
+
+        tp = np.sum(pred_binary & target_binary)
+        fp = np.sum(pred_binary & (~target_binary))
+        fn = np.sum((~pred_binary) & target_binary)
+
+        prec = tp / (tp + fp + eps)
+        rec = tp / (tp + fn + eps)
+        f1 = 2 * prec * rec / (prec + rec + eps)
+
+        precision_list.append(prec)
+        recall_list.append(rec)
+        f1_list.append(f1)
+
+    return {
+        "thresholds": thresholds,
+        "precision": np.array(precision_list),
+        "recall": np.array(recall_list),
+        "f1": np.array(f1_list),
+    }
+
+
+def average_precision_for_class(logits: torch.Tensor, target: torch.Tensor, class_id: int, num_thresholds: int = 100) -> float:
+    """
+    Compute Average Precision (AP) for a specific class using the PR curve.
+
+    AP = ∫ Precision(Recall) dRecall
+    Approximated using the trapezoidal rule.
+
+    Args:
+        logits: (B, C, H, W) model output logits
+        target: (B, H, W) ground truth labels
+        class_id: which class to compute for (1=iris, 2=pupil)
+        num_thresholds: number of threshold points for PR curve
+
+    Returns:
+        AP score (scalar)
+    """
+    pr_curve = precision_recall_curve_for_class(logits, target, class_id, num_thresholds)
+
+    # Sort by recall (ascending) for proper integration
+    recall = pr_curve["recall"]
+    precision = pr_curve["precision"]
+
+    sorted_idx = np.argsort(recall)
+    recall_sorted = recall[sorted_idx]
+    precision_sorted = precision[sorted_idx]
+
+    # Compute AP using trapezoidal rule
+    ap = np.trapz(precision_sorted, recall_sorted)
+
+    return float(ap)
+
+
+def average_precision_from_logits(logits: torch.Tensor, target: torch.Tensor, num_thresholds: int = 100) -> Dict[str, float]:
+    """
+    Compute Average Precision (AP) for iris and pupil.
+
+    Args:
+        logits: (B, C, H, W) model output logits
+        target: (B, H, W) ground truth labels
+        num_thresholds: number of threshold points for PR curve
+
+    Returns:
+        Dictionary with keys: ap_iris, ap_pupil, map (mean AP)
+    """
+    ap_iris = average_precision_for_class(logits, target, class_id=1, num_thresholds=num_thresholds)
+    ap_pupil = average_precision_for_class(logits, target, class_id=2, num_thresholds=num_thresholds)
+
+    return {
+        "ap_iris": ap_iris,
+        "ap_pupil": ap_pupil,
+        "map": (ap_iris + ap_pupil) / 2.0,
+    }
+
+
+def precision_recall_curves_from_logits(logits: torch.Tensor, target: torch.Tensor, num_thresholds: int = 100) -> Dict[str, Dict[str, np.ndarray]]:
+    """
+    Compute Precision-Recall curves for iris and pupil.
+
+    Args:
+        logits: (B, C, H, W) model output logits
+        target: (B, H, W) ground truth labels
+        num_thresholds: number of threshold points for PR curve
+
+    Returns:
+        Dictionary with keys: pr_iris, pr_pupil
+        Each contains: {thresholds, precision, recall, f1}
+    """
+    pr_iris = precision_recall_curve_for_class(logits, target, class_id=1, num_thresholds=num_thresholds)
+    pr_pupil = precision_recall_curve_for_class(logits, target, class_id=2, num_thresholds=num_thresholds)
+
+    return {
+        "pr_iris": pr_iris,
+        "pr_pupil": pr_pupil,
+    }
+
+
+# ============================================================================
 # Combined metric computation
 # ============================================================================
 
 def compute_all_metrics(logits: torch.Tensor, target: torch.Tensor,
-                       tau_px: float = 2.0, boundary_dilation: int = 1) -> Dict[str, float]:
+                       tau_px: float = 2.0, boundary_dilation: int = 1,
+                       compute_ap: bool = False, ap_num_thresholds: int = 100) -> Dict[str, float]:
     """
     Compute all segmentation metrics in one call.
 
@@ -832,6 +975,8 @@ def compute_all_metrics(logits: torch.Tensor, target: torch.Tensor,
         target: (B, H, W) ground truth labels
         tau_px: tolerance threshold for NSD in pixels (default 2.0)
         boundary_dilation: dilation radius for Boundary IoU (default 1)
+        compute_ap: if True, also compute Average Precision (AP) metrics (default False, as it's expensive)
+        ap_num_thresholds: number of thresholds for AP computation (default 100)
 
     Returns:
         Dictionary with all metric keys:
@@ -841,6 +986,7 @@ def compute_all_metrics(logits: torch.Tensor, target: torch.Tensor,
         - Boundary distances: hd95_iris, hd95_pupil, assd_iris, assd_pupil, masd_iris, masd_pupil
         - Boundary agreement: boundary_iou_iris, boundary_iou_pupil, nsd_iris, nsd_pupil
         - Shape errors: radius_error_iris, radius_error_pupil, area_rel_error_iris, area_rel_error_pupil
+        - Average Precision (if compute_ap=True): ap_iris, ap_pupil, map
     """
     metrics_overlap = iris_pupil_scores_from_logits(logits, target)
     metrics_precision_recall = precision_recall_f1_from_logits(logits, target)
@@ -858,7 +1004,7 @@ def compute_all_metrics(logits: torch.Tensor, target: torch.Tensor,
         k: v for k, v in metrics_precision_recall.items() if not k.startswith("f1_")
     }
 
-    return {
+    result = {
         **metrics_overlap,
         **metrics_precision_recall_filtered,
         **metrics_center,
@@ -869,3 +1015,10 @@ def compute_all_metrics(logits: torch.Tensor, target: torch.Tensor,
         **metrics_nsd,
         **metrics_shape,
     }
+
+    # Optionally compute AP metrics (expensive)
+    if compute_ap:
+        metrics_ap = average_precision_from_logits(logits, target, num_thresholds=ap_num_thresholds)
+        result.update(metrics_ap)
+
+    return result

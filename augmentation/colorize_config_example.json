@@ -1,0 +1,8 @@
+{
+    "in_dir": "data/ir_eyes",
+    "out_dir": "data/colorized_eyes",
+    "variants": 2,
+    "temperature": 0.7,
+    "eye_color": "auto",
+    "model": "gemini-2.5-flash-image"
+}

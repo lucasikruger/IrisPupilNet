@@ -1,0 +1,31 @@
+# K-Fold Cross-Validation Configuration Example
+# This config demonstrates how to run k-fold cross-validation training
+
+# Dataset
+dataset: csv_seg
+data_root: dataset
+csv: dataset/mobius.csv
+default_format: mobius_3c
+use_val: false  # Set to true to combine train+val splits before k-fold
+
+# K-Fold parameters
+n_folds: 5
+shuffle: true
+random_seed: 42
+
+# Model
+model: unet_se_small
+img_size: 160
+num_classes: 3
+base: 32
+color: false  # Use grayscale images
+
+# Training
+batch_size: 32
+epochs: 20
+lr: 0.001
+weight_decay: 0.0001
+workers: 4
+
+# Output
+out: runs/kfold_mobius_unet_se

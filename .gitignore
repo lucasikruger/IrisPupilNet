@@ -16,11 +16,16 @@ ENV/
 
 # Dataset files (large binary files)
 data/
+dataset/
+yolo_dataset/
 *.h5
 *.hdf5
 *.tar
 *.zip
 *.tar.gz
+
+# Junk files
+=8.3.0
 
 # Model checkpoints (large files - track via Git LFS or external storage)
 checkpoints/*.pt

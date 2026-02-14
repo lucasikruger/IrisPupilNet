@@ -1,0 +1,56 @@
+# Example config: YOLO11 Small segmentation with grayscale input
+#
+# YOLO11 Integration Notes:
+# - Uses YOLO11 as a pretrained backbone + custom semantic segmentation head
+# - Supports variants: yolo11n_seg (nano), yolo11s_seg (small), yolo11m_seg (medium), yolo11l_seg (large)
+# - Base parameter mapping: 16→nano, 32→small, 64→medium, 128→large
+# - First run will download pretrained weights (~6-25MB depending on variant)
+# - YOLO requires img_size divisible by 32 (e.g., 128, 160, 192, 224, 256)
+
+# Dataset
+dataset: csv_seg
+data_root: /path/to/your/data
+csv: dataset/merged/all_datasets.csv
+default_format: mobius_3c
+
+# Model architecture - YOLO11 Small
+model: yolo11s_seg    # Options: yolo11n_seg, yolo11s_seg, yolo11m_seg, yolo11l_seg, yolo11_seg (auto)
+num_classes: 3        # 0=bg, 1=iris, 2=pupil
+base: 32              # Maps to 's' variant (16=nano, 32=small, 64=medium, 128=large)
+in_channels: 1        # Grayscale (3 for RGB)
+color: false
+
+# Input/Output
+img_size: 160         # Must be multiple of 32 for YOLO (128, 160, 192, 224, 256, etc.)
+out: runs/yolo11s_seg
+
+# Training hyperparameters
+# Note: YOLO models are larger than UNet-SE, reduce batch_size if OOM
+epochs: 50
+batch_size: 16        # Reduced from 32 due to larger model size
+lr: 1.0e-3            # Learning rate (try 5e-4 if training from scratch)
+weight_decay: 1.0e-4
+workers: 4
+
+# Validation & checkpointing
+val_every: 1
+save_every: 10        # Save checkpoint every 10 epochs
+resume: null
+
+# Metrics & logging
+metrics_csv: null             # Custom path for metrics CSV (null = auto: out/metrics.csv)
+metrics_plot: null            # Custom path for metrics plot (null = auto: out/metrics.png)
+log_every: 0                  # Log batch progress every N batches (0 = disable)
+save_best_metrics: true       # Save best_metrics.yaml with best epoch results
+tensorboard: false            # Enable TensorBoard logging
+
+# Visualization
+show_examples: 4              # Show 4 random validation examples
+show_examples_every: 1        # Generate examples visualization every epoch
+
+# Transfer Learning Tips:
+# 1. Start with pretrained YOLO (default) for faster convergence
+# 2. If overfitting, try freezing backbone: model.freeze_backbone() in train.py
+# 3. Use smaller variants (nano, small) for quick experiments
+# 4. Use larger variants (medium, large) for best accuracy
+# 5. Adjust batch_size based on GPU memory (16 for small, 8 for medium/large)

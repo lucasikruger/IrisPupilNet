@@ -155,7 +155,9 @@ def init_metrics_writer(csv_path: Path):
         "nsd_iris", "nsd_pupil",
         # Shape errors
         "radius_error_iris", "radius_error_pupil",
-        "area_rel_error_iris", "area_rel_error_pupil"
+        "area_rel_error_iris", "area_rel_error_pupil",
+        # Average Precision (AP)
+        "ap_iris", "ap_pupil", "map"
     ])
     return csv_file, writer
 
@@ -204,8 +206,8 @@ def evaluate(model, dl, loss_fn, device, num_classes: int, epoch: int = None):
         loss = loss_fn(logits, y).item()
         iou = mean_iou_ignore_bg(logits, y, num_classes=num_classes)
 
-        # Compute all segmentation metrics
-        batch_metrics = compute_all_metrics(logits, y)
+        # Compute all segmentation metrics (including AP)
+        batch_metrics = compute_all_metrics(logits, y, compute_ap=True, ap_num_thresholds=100)
         for k, v in batch_metrics.items():
             metrics_sum[k] += v
         n_batches += 1
@@ -574,6 +576,7 @@ def main():
                 msg += f" | IoU iris:{val_metrics['iou_iris']:.3f} pupil:{val_metrics['iou_pupil']:.3f} mean:{val_iou:.3f}"
                 msg += f" | Dice iris:{val_metrics['dice_iris']:.3f} pupil:{val_metrics['dice_pupil']:.3f} mean:{val_metrics['dice_mean']:.3f}"
                 msg += f" | HD95 iris:{val_metrics['hd95_iris']:.2f} pupil:{val_metrics['hd95_pupil']:.2f}px"
+                msg += f" | mAP:{val_metrics['map']:.3f}"
             else:
                 msg += " | val skipped"
             print(msg)
@@ -670,9 +673,13 @@ def main():
                     f"{val_metrics['radius_error_pupil']:.6f}",
                     f"{val_metrics['area_rel_error_iris']:.6f}",
                     f"{val_metrics['area_rel_error_pupil']:.6f}",
+                    # Average Precision
+                    f"{val_metrics['ap_iris']:.6f}",
+                    f"{val_metrics['ap_pupil']:.6f}",
+                    f"{val_metrics['map']:.6f}",
                 ])
             else:
-                csv_row.extend([""] * 26)  # Empty columns for skipped validation (26 new metric columns)
+                csv_row.extend([""] * 29)  # Empty columns for skipped validation (29 metric columns)
             metrics_writer.writerow(csv_row)
             metrics_file.flush()
 
