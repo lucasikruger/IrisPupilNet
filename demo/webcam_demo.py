@@ -1,10 +1,14 @@
 """
-Eye & Iris/Pupil Demo (OpenCV + MediaPipe FaceMesh + optional ONNX)
+Eye & Iris/Pupil Demo (OpenCV + MediaPipe FaceMesh + optional ONNX, PyTorch .pt, or YOLO)
 
 Features
 - Default MIRROR preview (use --no-mirror to disable).
 - Draws a head bounding box + both eye boxes on the main camera window.
-- If --model is provided, runs ONNX segmentation with auto-detected config.
+- --model accepts both .onnx and .pt checkpoints (auto-detected by extension).
+  .onnx  → ONNX Runtime (fast, no PyTorch needed)
+  .pt    → PyTorch checkpoint (arch/size auto-read from checkpoint args)
+- If --yolo-model is provided, runs native YOLO11 instance segmentation
+  and converts instance masks to semantic segmentation automatically.
 - Opens a second "Eyes Grid" window:
     Top-left  : Left eye (no seg)
     Top-right : Right eye (no seg)
@@ -15,13 +19,16 @@ Controls
 - Q / ESC to quit.
 
 Install
-    pip install opencv-python mediapipe==0.10.14 numpy
-    # optional for segmentation:
+    pip install opencv-python mediapipe==0.10.14 numpy torch
+    # optional for ONNX segmentation:
     pip install onnxruntime    # or onnxruntime-gpu if you have CUDA
+    # optional for YOLO segmentation:
+    pip install ultralytics
 
-Simple Usage (auto-detects config from model)
-    python demo/webcam_demo.py
-    python demo/webcam_demo.py --model model.onnx
+Simple Usage
+    python demo/webcam_demo.py --model iris_pupil_bw.onnx
+    python demo/webcam_demo.py --model models/unet1/best.pt
+    python demo/webcam_demo.py --yolo-model models/yolo/first_try.pt
     python demo/webcam_demo.py --model runs/experiment/model.onnx --no-mirror
 
 Advanced Usage (with manual overrides)
@@ -30,12 +37,30 @@ Advanced Usage (with manual overrides)
 """
 
 import argparse, sys, cv2, numpy as np
+from pathlib import Path
 
-# ---- optional segmentation (only if --model is passed)
+# ---- optional ONNX segmentation
 try:
     import onnxruntime as ort
 except Exception:
     ort = None
+
+# ---- PyTorch segmentation
+try:
+    import torch
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from irispupilnet.models import MODEL_REGISTRY
+    _TORCH_OK = True
+except Exception:
+    torch = None
+    MODEL_REGISTRY = {}
+    _TORCH_OK = False
+
+# ---- optional YOLO segmentation (only if --yolo-model is passed)
+try:
+    from ultralytics import YOLO as _YOLO
+except Exception:
+    _YOLO = None
 
 import mediapipe as mp
 
@@ -135,6 +160,108 @@ def run_segmentation(sess, crop_bgr, input_channels=1):
     logits = out[0]                                      # [H,W,3]
     return np.argmax(logits, axis=-1).astype(np.uint8)   # [H,W]
 
+
+def load_torch_model(checkpoint_path):
+    """Load a PyTorch .pt checkpoint from the IrisPupilNet training pipeline.
+
+    Reads model arch, img_size, in_channels, num_classes, and base from the
+    checkpoint's saved args so no extra flags are needed.
+
+    Returns:
+        (model, img_size, input_channels)
+    """
+    if not _TORCH_OK:
+        raise RuntimeError("torch or irispupilnet not importable")
+    ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    args = ckpt.get("args", {})
+    model_name   = args.get("model", "unet_se_small")
+    img_size     = args.get("img_size", DEFAULT_IMG_SIZE)
+    in_channels  = args.get("in_channels", 1)
+    num_classes  = args.get("num_classes", 3)
+    base         = args.get("base", 32)
+
+    if model_name not in MODEL_REGISTRY:
+        raise ValueError(f"Unknown model '{model_name}'. Available: {list(MODEL_REGISTRY.keys())}")
+
+    model_fn = MODEL_REGISTRY[model_name]
+    model = model_fn(in_channels=in_channels, n_classes=num_classes, base=base)
+    state_dict = ckpt["model"] if "model" in ckpt else ckpt
+    model.load_state_dict(state_dict)
+    model.eval()
+    print(f"Loaded PyTorch model: {checkpoint_path}")
+    print(f"  arch={model_name}  img_size={img_size}  in_channels={in_channels}")
+    return model, img_size, in_channels
+
+
+def run_torch_segmentation(model, crop_bgr, input_channels=1):
+    """Run PyTorch inference on a BGR crop.
+
+    Returns:
+        mask [H, W] with values 0=bg, 1=iris, 2=pupil
+    """
+    if crop_bgr is None or not _TORCH_OK:
+        return None
+    if input_channels == 1:
+        gray = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2GRAY)
+        inp = torch.from_numpy(gray).float().unsqueeze(0).unsqueeze(0) / 255.0  # [1,1,H,W]
+    else:
+        rgb = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
+        inp = torch.from_numpy(rgb).float().permute(2, 0, 1).unsqueeze(0) / 255.0  # [1,3,H,W]
+    with torch.no_grad():
+        logits = model(inp)[0]  # [num_classes, H, W]
+    return logits.argmax(0).byte().numpy()  # [H, W]
+
+
+def load_yolo_model(weights_path):
+    """Load a native YOLO11 instance segmentation model."""
+    if _YOLO is None:
+        raise RuntimeError("ultralytics not installed. Run: pip install ultralytics")
+    model = _YOLO(weights_path)
+    print(f"Loaded YOLO model: {weights_path}")
+    return model
+
+
+def run_yolo_segmentation(yolo_model, crop_bgr, img_size=160, conf=0.25):
+    """Run YOLO instance segmentation and convert to semantic mask.
+
+    Args:
+        crop_bgr: BGR image crop [H, W, 3]
+        img_size: YOLO inference size
+        conf: Confidence threshold
+
+    Returns:
+        mask [H, W] with values 0=bg, 1=iris, 2=pupil
+    """
+    if crop_bgr is None:
+        return None
+    h, w = crop_bgr.shape[:2]
+    results = yolo_model.predict(
+        source=crop_bgr,
+        imgsz=img_size,
+        conf=conf,
+        verbose=False,
+    )[0]
+
+    semantic_mask = np.zeros((h, w), dtype=np.uint8)
+    if results.masks is None or len(results.masks) == 0:
+        return semantic_mask
+
+    # YOLO class map: 0=iris → semantic 1, 1=pupil → semantic 2
+    class_map = {0: 1, 1: 2}
+    instance_masks = results.masks.data.cpu().numpy()  # [N, H', W']
+    classes = results.boxes.cls.cpu().numpy()          # [N]
+
+    for mask, cls in zip(instance_masks, classes):
+        semantic_class = class_map.get(int(cls), 0)
+        if semantic_class == 0:
+            continue
+        mask_resized = cv2.resize(
+            mask.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST
+        )
+        semantic_mask[mask_resized > 0] = semantic_class
+
+    return semantic_mask
+
 def overlay_mask_on_image(img_bgr, mask, alpha=0.45):
     """Return an overlayed BGR image; mask values: 0 bg, 1 iris (green), 2 pupil (blue-ish)."""
     h, w = img_bgr.shape[:2]
@@ -167,6 +294,8 @@ def main():
     ap.add_argument("--cam", type=int, default=0, help="camera index")
     ap.add_argument("--no-mirror", action="store_true", help="disable selfie mirror view")
     ap.add_argument("--model", type=str, default="", help="path to ONNX model (optional)")
+    ap.add_argument("--yolo-model", type=str, default="",
+                    help="path to native YOLO11 .pt model (optional, mutually exclusive with --model)")
     ap.add_argument("--tile", type=int, default=240, help="per-tile size for grid window")
 
     # Optional overrides (auto-detected from model if not provided)
@@ -178,7 +307,13 @@ def main():
     ap.set_defaults(input_channels=None)  # Auto-detect if None
     ap.add_argument("--img-size", type=int, default=None,
                     help="Override: Model input size (HxW), auto-detected if not provided")
+    ap.add_argument("--conf", type=float, default=0.25,
+                    help="Confidence threshold for YOLO detection (default 0.25)")
     args = ap.parse_args()
+
+    if args.model and args.yolo_model:
+        print("ERROR: --model and --yolo-model are mutually exclusive", file=sys.stderr)
+        sys.exit(1)
 
     # MediaPipe FaceMesh
     mp_face = mp.solutions.face_mesh
@@ -193,32 +328,45 @@ def main():
     cap.set(cv2.CAP_PROP_FRAME_WIDTH,  1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
-    # Optional model - auto-detect config
+    # Load model (ONNX, PyTorch .pt, or native YOLO)
     session = None
+    torch_model = None
+    torch_in_channels = 1
+    yolo_model = None
     img_size = args.img_size or DEFAULT_IMG_SIZE
     input_channels = args.input_channels or 1
 
     if args.model:
+        ext = Path(args.model).suffix.lower()
+        if ext == ".onnx":
+            try:
+                session, detected_size, detected_channels = load_onnx_session(args.model)
+                if args.img_size is None:
+                    img_size = detected_size
+                if args.input_channels is None:
+                    input_channels = detected_channels
+                    print(f"  img_size={img_size}  channels={input_channels} ({'RGB' if input_channels==3 else 'gray'})")
+            except Exception as e:
+                print(f"Could not load ONNX model: {e}")
+        elif ext == ".pt":
+            try:
+                torch_model, detected_size, detected_channels = load_torch_model(args.model)
+                torch_in_channels = detected_channels
+                if args.img_size is None:
+                    img_size = detected_size
+                if args.input_channels is None:
+                    input_channels = detected_channels
+            except Exception as e:
+                print(f"Could not load PyTorch model: {e}")
+        else:
+            print(f"Unknown model extension '{ext}'. Use .onnx or .pt")
+
+    elif args.yolo_model:
         try:
-            session, detected_size, detected_channels = load_onnx_session(args.model)
-            print(f"Loaded ONNX model: {args.model}")
-
-            # Use detected values if not overridden by CLI
-            if args.img_size is None:
-                img_size = detected_size
-                print(f"  Using detected image size: {img_size}")
-            else:
-                print(f"  Using CLI override image size: {img_size}")
-
-            if args.input_channels is None:
-                input_channels = detected_channels
-                channel_type = "RGB" if input_channels == 3 else "grayscale"
-                print(f"  Using detected input channels: {input_channels} ({channel_type})")
-            else:
-                channel_type = "RGB" if input_channels == 3 else "grayscale"
-                print(f"  Using CLI override input channels: {input_channels} ({channel_type})")
+            yolo_model = load_yolo_model(args.yolo_model)
+            print(f"  Image size: {img_size}x{img_size} | conf threshold: {args.conf}")
         except Exception as e:
-            print(f"Could not load model: {e}")
+            print(f"Could not load YOLO model: {e}")
 
     print("Press Q or ESC to quit.")
     while True:
@@ -261,19 +409,38 @@ def main():
         tl = label_tile(left_crop  if left_crop  is not None else np.zeros((img_size,img_size,3), np.uint8), "Left eye")
         tr = label_tile(right_crop if right_crop is not None else np.zeros((img_size,img_size,3), np.uint8), "Right eye")
 
-        if session is not None and left_crop is not None:
-            l_mask = run_segmentation(session, left_crop, input_channels=input_channels)
-            bl_img = overlay_mask_on_image(left_crop, l_mask) if l_mask is not None else left_crop
-            bl = label_tile(bl_img, "Left seg")
-        else:
-            bl = label_tile(np.zeros((img_size,img_size,3), np.uint8), "Left seg (no model)")
+        def _infer(crop):
+            if crop is None:
+                return None
+            if session is not None:
+                return run_segmentation(session, crop, input_channels=input_channels)
+            if torch_model is not None:
+                return run_torch_segmentation(torch_model, crop, torch_in_channels)
+            if yolo_model is not None:
+                return run_yolo_segmentation(yolo_model, crop, img_size, args.conf)
+            return None
 
-        if session is not None and right_crop is not None:
-            r_mask = run_segmentation(session, right_crop, input_channels=input_channels)
-            br_img = overlay_mask_on_image(right_crop, r_mask) if r_mask is not None else right_crop
-            br = label_tile(br_img, "Right seg")
+        def _model_tag():
+            if session is not None:
+                return "UNet (ONNX)"
+            if torch_model is not None:
+                return "UNet (.pt)"
+            if yolo_model is not None:
+                return "YOLO"
+            return "no model"
+
+        tag = _model_tag()
+        l_mask = _infer(left_crop)
+        if l_mask is not None:
+            bl = label_tile(overlay_mask_on_image(left_crop, l_mask), f"Left seg ({tag})")
         else:
-            br = label_tile(np.zeros((img_size,img_size,3), np.uint8), "Right seg (no model)")
+            bl = label_tile(np.zeros((img_size,img_size,3), np.uint8), f"Left seg ({tag})")
+
+        r_mask = _infer(right_crop)
+        if r_mask is not None:
+            br = label_tile(overlay_mask_on_image(right_crop, r_mask), f"Right seg ({tag})")
+        else:
+            br = label_tile(np.zeros((img_size,img_size,3), np.uint8), f"Right seg ({tag})")
 
         grid = make_grid(tl, tr, bl, br, tile_wh=(args.tile, args.tile))
 
