@@ -1,5 +1,24 @@
 [
   {
+    "name": "ritnet_in_2x__lodo_mobius",
+    "url": "/models/ritnet_in_2x__lodo_mobius.onnx",
+    "input": {
+      "channels": 3,
+      "size": 160,
+      "preprocess": "rgb_clahe_lab_gamma_01"
+    },
+    "output": {
+      "classes": [
+        "bg",
+        "iris",
+        "pupil"
+      ]
+    },
+    "dataset": "polyu + ubiris_zoomed + casia_pix2pix_rgb + tayed_pix2pix_rgb (MOBIUS held out)",
+    "val_iou": 0.8735,
+    "architecture": "ritnet_in_2x (RGB, LODO mobius-held-out) — true generalization test"
+  },
+  {
     "name": "ritnet_in_2x__final",
     "url": "/models/ritnet_in_2x__final.onnx",
     "input": {
