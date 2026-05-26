@@ -172,7 +172,36 @@ export function renderCropWithMask(
   target.height = crop.height;
   const ctx = target.getContext("2d");
   const variant: PostprocessName = opts.postprocess ?? "morph";
-  const postMask = applyPostprocess(seg.argmax, seg.size, variant, opts.postprocessOpts, seg.probs);
+  // For the open-iris-style "clean" variant, inject the eyelid landmarks
+  // (mapped from crop coords to mask coords) and the crop pixel data so the
+  // postprocess can do eyelid polynomial cropping + specular masking.
+  let ppOpts = opts.postprocessOpts;
+  if (variant === "ellipse_anatomical_clean") {
+    ppOpts = { ...(ppOpts ?? {}) };
+    if (opts.eyelidPoints && !ppOpts.eyelidPoints) {
+      const sx = seg.size / crop.width;
+      const sy = seg.size / crop.height;
+      ppOpts.eyelidPoints = opts.eyelidPoints.map((p) => ({ x: p.x * sx, y: p.y * sy }));
+    }
+    if (!ppOpts.imageData) {
+      const ctx0 = crop.getContext("2d");
+      if (ctx0) {
+        // Get crop pixels at mask resolution. If crop != seg.size, downsample.
+        if (crop.width === seg.size && crop.height === seg.size) {
+          ppOpts.imageData = ctx0.getImageData(0, 0, seg.size, seg.size).data;
+        } else {
+          const tmp = document.createElement("canvas");
+          tmp.width = seg.size; tmp.height = seg.size;
+          const tctx = tmp.getContext("2d");
+          if (tctx) {
+            tctx.drawImage(crop, 0, 0, seg.size, seg.size);
+            ppOpts.imageData = tctx.getImageData(0, 0, seg.size, seg.size).data;
+          }
+        }
+      }
+    }
+  }
+  const postMask = applyPostprocess(seg.argmax, seg.size, variant, ppOpts, seg.probs);
   const ellipses = fitIrisPupilEllipses(postMask, seg.size);
 
   if (!ctx) return { postMask, ellipses };

@@ -16,7 +16,8 @@ export type PostprocessName =
   | "morph"
   | "ellipse_iris"
   | "ellipse_iris_pupil"
-  | "ellipse_anatomical";
+  | "ellipse_anatomical"
+  | "ellipse_anatomical_clean";
 
 export const POSTPROCESS_VARIANTS: PostprocessName[] = [
   "raw",
@@ -25,6 +26,7 @@ export const POSTPROCESS_VARIANTS: PostprocessName[] = [
   "ellipse_iris",
   "ellipse_iris_pupil",
   "ellipse_anatomical",
+  "ellipse_anatomical_clean",
 ];
 
 // Anatomical priors (Hu et al. 2018) — matches src/postprocess.py defaults.
@@ -44,6 +46,14 @@ export interface PostprocessOptions {
   swapClasses?: boolean;
   /** Confidence threshold (0..1) — set to bg below this. Requires probs. */
   probThreshold?: number;
+  /** Eyelid landmark points (in mask coords, after resize to `size`).
+   *  Used by `ellipse_anatomical_clean` to crop iris by polynomial eyelid fit. */
+  eyelidPoints?: { x: number; y: number }[];
+  /** Crop pixel data at mask resolution (RGBA Uint8ClampedArray, size×size×4).
+   *  Used by `ellipse_anatomical_clean` to mask specular reflections. */
+  imageData?: Uint8ClampedArray;
+  /** Specular-highlight percentile threshold inside iris (default 99 = top 1%). */
+  specularPct?: number;
 }
 
 /** Swap classes 1↔2 in a (size×size) Uint8 mask. */
@@ -456,6 +466,150 @@ function vEllipseIrisPupil(mask: Uint8Array, w: number, h: number, ksIris = 5, k
   return encode(ring, pupilDisc);
 }
 
+// ---------------------------------------------------------------------------
+// Open-iris–inspired refinements (eyelid polynomial mask + specular masking)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fit y = a*x² + b*x + c to a list of (x, y) points via normal equations.
+ * Returns null if fewer than 3 points or singular system.
+ */
+function fitQuadratic(pts: { x: number; y: number }[]): { a: number; b: number; c: number } | null {
+  if (pts.length < 3) return null;
+  let sx0 = 0, sx1 = 0, sx2 = 0, sx3 = 0, sx4 = 0;
+  let sy0 = 0, syx1 = 0, syx2 = 0;
+  for (const p of pts) {
+    const x = p.x, y = p.y;
+    const x2 = x * x;
+    sx0 += 1;
+    sx1 += x;
+    sx2 += x2;
+    sx3 += x2 * x;
+    sx4 += x2 * x2;
+    sy0 += y;
+    syx1 += y * x;
+    syx2 += y * x2;
+  }
+  // Solve [[sx4,sx3,sx2],[sx3,sx2,sx1],[sx2,sx1,sx0]] · [a,b,c]ᵀ = [syx2,syx1,sy0]ᵀ
+  // 3×3 inverse via cofactors.
+  const m: number[][] = [[sx4, sx3, sx2], [sx3, sx2, sx1], [sx2, sx1, sx0]];
+  const v = [syx2, syx1, sy0];
+  const det =
+    m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) -
+    m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
+    m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+  if (Math.abs(det) < 1e-9) return null;
+  const inv00 = (m[1][1] * m[2][2] - m[1][2] * m[2][1]) / det;
+  const inv01 = -(m[0][1] * m[2][2] - m[0][2] * m[2][1]) / det;
+  const inv02 = (m[0][1] * m[1][2] - m[0][2] * m[1][1]) / det;
+  const inv10 = -(m[1][0] * m[2][2] - m[1][2] * m[2][0]) / det;
+  const inv11 = (m[0][0] * m[2][2] - m[0][2] * m[2][0]) / det;
+  const inv12 = -(m[0][0] * m[1][2] - m[0][2] * m[1][0]) / det;
+  const inv20 = (m[1][0] * m[2][1] - m[1][1] * m[2][0]) / det;
+  const inv21 = -(m[0][0] * m[2][1] - m[0][1] * m[2][0]) / det;
+  const inv22 = (m[0][0] * m[1][1] - m[0][1] * m[1][0]) / det;
+  const a = inv00 * v[0] + inv01 * v[1] + inv02 * v[2];
+  const b = inv10 * v[0] + inv11 * v[1] + inv12 * v[2];
+  const c = inv20 * v[0] + inv21 * v[1] + inv22 * v[2];
+  return { a, b, c };
+}
+
+/**
+ * Open-iris–style eyelid mask. Splits the eyelid landmarks into upper/lower by
+ * comparing each point to the centroid y, fits a quadratic y(x) to each, and
+ * returns a binary mask of the pixels BETWEEN the two curves (=eye opening).
+ */
+function eyelidOpeningMask(
+  eyelidPoints: { x: number; y: number }[],
+  w: number,
+  h: number,
+): Uint8Array | null {
+  if (eyelidPoints.length < 6) return null;
+  let cyMean = 0;
+  for (const p of eyelidPoints) cyMean += p.y;
+  cyMean /= eyelidPoints.length;
+  const upper = eyelidPoints.filter((p) => p.y < cyMean);
+  const lower = eyelidPoints.filter((p) => p.y >= cyMean);
+  const fitU = fitQuadratic(upper);
+  const fitL = fitQuadratic(lower);
+  if (!fitU || !fitL) return null;
+  const out = new Uint8Array(w * h);
+  for (let x = 0; x < w; x++) {
+    const yU = fitU.a * x * x + fitU.b * x + fitU.c;
+    const yL = fitL.a * x * x + fitL.b * x + fitL.c;
+    const top = Math.max(0, Math.floor(Math.min(yU, yL)));
+    const bot = Math.min(h - 1, Math.ceil(Math.max(yU, yL)));
+    for (let y = top; y <= bot; y++) out[y * w + x] = 1;
+  }
+  return out;
+}
+
+/**
+ * Compute a binary mask of specular-reflection pixels INSIDE `irisMask`.
+ * Implementation: for pixels in the iris, find the threshold at
+ * `specularPct`-th percentile of luminance. Mark anything above as specular.
+ */
+function specularMaskInIris(
+  imageData: Uint8ClampedArray,
+  irisMask: Uint8Array,
+  w: number,
+  h: number,
+  specularPct: number,
+): Uint8Array {
+  const out = new Uint8Array(w * h);
+  // Collect luminance values inside iris
+  const lums: number[] = [];
+  for (let i = 0, p = 0; i < imageData.length; i += 4, p++) {
+    if (!irisMask[p]) continue;
+    const l = (0.299 * imageData[i] + 0.587 * imageData[i + 1] + 0.114 * imageData[i + 2]) | 0;
+    lums.push(l);
+  }
+  if (lums.length === 0) return out;
+  lums.sort((a, b) => a - b);
+  const idx = Math.min(lums.length - 1, Math.floor((specularPct / 100) * lums.length));
+  const thr = lums[idx];
+  for (let i = 0, p = 0; i < imageData.length; i += 4, p++) {
+    if (!irisMask[p]) continue;
+    const l = (0.299 * imageData[i] + 0.587 * imageData[i + 1] + 0.114 * imageData[i + 2]) | 0;
+    if (l >= thr) out[p] = 1;
+  }
+  return out;
+}
+
+function vEllipseAnatomicalClean(
+  mask: Uint8Array,
+  w: number,
+  h: number,
+  ksIris: number,
+  ksPupil: number,
+  eyelidPoints?: { x: number; y: number }[],
+  imageData?: Uint8ClampedArray,
+  specularPct = 99,
+): Uint8Array {
+  // 1. Start from anatomical ellipse output
+  let m = vEllipseAnatomical(mask, w, h, ksIris, ksPupil);
+
+  // 2. Crop by eyelid opening (if landmarks available)
+  if (eyelidPoints && eyelidPoints.length >= 6) {
+    const opening = eyelidOpeningMask(eyelidPoints, w, h);
+    if (opening) {
+      for (let i = 0; i < m.length; i++) {
+        if (!opening[i] && m[i] !== 0) m[i] = 0;
+      }
+    }
+  }
+
+  // 3. Specular reflection masking — pixels inside the iris with luminance in
+  //    the top `100 - specularPct`% are demoted from iris/pupil to bg.
+  if (imageData && imageData.length === w * h * 4) {
+    const irisOrPupil = new Uint8Array(m.length);
+    for (let i = 0; i < m.length; i++) irisOrPupil[i] = m[i] !== 0 ? 1 : 0;
+    const spec = specularMaskInIris(imageData, irisOrPupil, w, h, specularPct);
+    for (let i = 0; i < m.length; i++) if (spec[i]) m[i] = 0;
+  }
+  return m;
+}
+
 function vEllipseAnatomical(mask: Uint8Array, w: number, h: number, ksIris = 5, ksPupil = 3): Uint8Array {
   const cleaned = vMorph(mask, w, h, ksIris, ksPupil);
   const { iris, pupil } = decode(cleaned);
@@ -566,6 +720,14 @@ export function applyPostprocess(
     case "ellipse_iris":       out = vEllipseIris(m, size, size, ksI, ksP); break;
     case "ellipse_iris_pupil": out = vEllipseIrisPupil(m, size, size, ksI, ksP); break;
     case "ellipse_anatomical": out = vEllipseAnatomical(m, size, size, ksI, ksP); break;
+    case "ellipse_anatomical_clean":
+      out = vEllipseAnatomicalClean(
+        m, size, size, ksI, ksP,
+        opts.eyelidPoints,
+        opts.imageData,
+        opts.specularPct ?? 99,
+      );
+      break;
   }
 
   // 3. Min area filter (drop tiny detections).

@@ -564,6 +564,7 @@ export default function WebcamDemo() {
                   showIris: showIrisRef.current,
                   showPupil: showPupilRef.current,
                   hardMask: true,
+                  eyelidPoints: crop.eyelidPoints,
                 });
               }
             }
@@ -582,6 +583,7 @@ export default function WebcamDemo() {
                   showPupil: showPupilRef.current,
                   showEllipse: showEllipseRef.current,
                   showPupilCenter: showPupilCenterRef.current,
+                  eyelidPoints: crop.eyelidPoints,
                 });
                 if (r.ellipses.pupil && r.ellipses.iris) {
                   const dx = r.ellipses.pupil.cx - r.ellipses.iris.cx;
@@ -1087,6 +1089,7 @@ export default function WebcamDemo() {
               {postprocess === "ellipse_iris" && "morph + reemplaza iris por disco de elipse fiteada"}
               {postprocess === "ellipse_iris_pupil" && "+ elipse para pupila sin restricciones"}
               {postprocess === "ellipse_anatomical" && "+ Hu 2018: pupila ⊂ iris, rₚ ≤ 0.40·rᵢ, offset ≤ 0.30·rᵢ"}
+              {postprocess === "ellipse_anatomical_clean" && "+ open-iris style: crop por párpado (poly quad) + máscara specular (top 1% luminancia en iris)"}
             </div>
           </div>
         </section>
@@ -1457,6 +1460,7 @@ function GalleryInspector({
           showIris: renderOpts.showIris,
           showPupil: renderOpts.showPupil,
           hardMask: true,
+          eyelidPoints: c.eyelidPoints,
         });
       }
 
@@ -1472,6 +1476,7 @@ function GalleryInspector({
           showPupil: renderOpts.showPupil,
           showEllipse: renderOpts.showEllipse,
           showPupilCenter: renderOpts.showPupilCenter,
+          eyelidPoints: c.eyelidPoints,
         });
       }
 
