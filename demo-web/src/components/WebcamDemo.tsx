@@ -52,8 +52,8 @@ export default function WebcamDemo() {
   const bwRef = useRef(false);
   useEffect(() => { bwRef.current = bw; }, [bw]);
 
-  const [postprocess, setPostprocess] = useState<PostprocessName>("morph");
-  const postprocessRef = useRef<PostprocessName>("morph");
+  const [postprocess, setPostprocess] = useState<PostprocessName>("ellipse_anatomical");
+  const postprocessRef = useRef<PostprocessName>("ellipse_anatomical");
   useEffect(() => { postprocessRef.current = postprocess; }, [postprocess]);
 
   const [showIris, setShowIris] = useState(true);
@@ -553,7 +553,7 @@ export default function WebcamDemo() {
             ))}
           </select>
           <span className="muted mono" style={{ fontSize: 11 }}>
-            morph = default · ellipse_anatomical = mejor para gaze
+            ellipse_anatomical = default · morph = raw morph close
           </span>
         </section>
 
