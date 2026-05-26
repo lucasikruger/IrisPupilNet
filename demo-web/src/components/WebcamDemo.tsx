@@ -408,22 +408,46 @@ export default function WebcamDemo() {
 
         const loop = async () => {
           if (cancelled) return;
-          // When paused (after capturar), keep the RAF alive so we can resume
-          // cleanly, but skip inference and canvas updates so the displayed
-          // crops match the captured frame.
-          if (pausedRef.current) {
-            rafRef.current = requestAnimationFrame(loop);
-            return;
-          }
+          const isPaused = pausedRef.current;
           const now = performance.now();
-          frameCount++;
-          if (now - fpsTimer >= 1000) {
-            setFps(frameCount);
-            frameCount = 0;
-            fpsTimer = now;
+          if (!isPaused) {
+            frameCount++;
+            if (now - fpsTimer >= 1000) {
+              setFps(frameCount);
+              frameCount = 0;
+              fpsTimer = now;
+            }
           }
 
-          const crops = cropperRef.current?.cropEyes(landmarker, video, now) ?? [];
+          // When paused, replay the frozen crops + logits from the last live
+          // frame so the user can tweak sliders and see the tiles update —
+          // no face detection, no model inference. cropEyes() is only called
+          // in the live branch.
+          type LoopCrop = {
+            side: "left" | "right";
+            bbox: { x: number; y: number; w: number; h: number };
+            canvas: HTMLCanvasElement;
+            eyelidPoints: { x: number; y: number }[];
+            savedResult?: SegmentationResult;
+          };
+          let crops: LoopCrop[];
+          if (isPaused) {
+            crops = lastCropsRef.current.map((sav) => {
+              const c = document.createElement("canvas");
+              c.width = sav.cropImageData.width;
+              c.height = sav.cropImageData.height;
+              c.getContext("2d")?.putImageData(sav.cropImageData, 0, 0);
+              return {
+                side: sav.side,
+                bbox: sav.bbox,
+                canvas: c,
+                eyelidPoints: sav.eyelidPoints,
+                savedResult: sav.result,
+              };
+            });
+          } else {
+            crops = cropperRef.current?.cropEyes(landmarker, video, now) ?? [];
+          }
           setEyesDetected(crops.length);
 
           // Draw eye bboxes on overlay canvas (in source-video coordinates).
@@ -478,24 +502,28 @@ export default function WebcamDemo() {
             if (!seg || !spec) continue;
 
             let result: SegmentationResult;
-            try {
-              result = await seg.run(crop.canvas);
-            } catch (e) {
-              console.warn("seg failed:", e);
-              continue;
-            }
-
-            // Snapshot this crop's raw pixels + logits so captureSnapshot can
-            // freeze the data without needing a second model invocation.
-            const cctx = crop.canvas.getContext("2d");
-            if (cctx) {
-              frameSnapshot.push({
-                side: crop.side,
-                bbox: crop.bbox,
-                cropImageData: cctx.getImageData(0, 0, crop.canvas.width, crop.canvas.height),
-                result,
-                eyelidPoints: crop.eyelidPoints,
-              });
+            if (crop.savedResult) {
+              // Paused: reuse the logits captured on the last live frame.
+              result = crop.savedResult;
+            } else {
+              try {
+                result = await seg.run(crop.canvas);
+              } catch (e) {
+                console.warn("seg failed:", e);
+                continue;
+              }
+              // Snapshot this crop's raw pixels + logits so captureSnapshot can
+              // freeze the data without needing a second model invocation.
+              const cctx = crop.canvas.getContext("2d");
+              if (cctx) {
+                frameSnapshot.push({
+                  side: crop.side,
+                  bbox: crop.bbox,
+                  cropImageData: cctx.getImageData(0, 0, crop.canvas.width, crop.canvas.height),
+                  result,
+                  eyelidPoints: crop.eyelidPoints,
+                });
+              }
             }
 
             const ppOpts: PostprocessOptions = {
@@ -622,7 +650,7 @@ export default function WebcamDemo() {
   const activeViews = VIEW_OPTIONS.filter((v) => enabledViews[v.id]);
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "300px minmax(0, 1fr) 320px", gap: 16, alignItems: "start" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "340px minmax(0, 1fr) 320px", gap: 16, alignItems: "start" }}>
       <aside className="panel" style={{ display: "grid", gap: 16, position: "sticky", top: 80, maxHeight: "calc(100vh - 100px)", overflowY: "auto" }}>
         {cameras.length > 0 && (
           <section style={{ display: "grid", gap: 6 }}>
@@ -699,21 +727,6 @@ export default function WebcamDemo() {
               </button>
             ))}
           </div>
-          {overlay === "blend" && (
-            <label style={{ display: "grid", gap: 4 }}>
-              <span className="muted mono" style={{ fontSize: 11 }}>
-                opacidad {(blendAlpha * 100).toFixed(0)}%
-              </span>
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.05}
-                value={blendAlpha}
-                onChange={(e) => setBlendAlpha(parseFloat(e.target.value))}
-              />
-            </label>
-          )}
           <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
             <input type="checkbox" checked={bw} onChange={(e) => setBw(e.target.checked)} />
             <span>como entrada del modelo (BW)</span>
@@ -729,7 +742,7 @@ export default function WebcamDemo() {
           <label><input type="checkbox" checked={showEyelid} onChange={(e) => setShowEyelid(e.target.checked)} /><span>puntos párpado</span></label>
         </section>
 
-        <details open style={{ background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 8, padding: 10 }}>
+        <details style={{ background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 8, padding: 10 }}>
           <summary style={{ cursor: "pointer", fontFamily: "var(--mono)", fontSize: 13, fontWeight: 600 }}>Debug</summary>
           <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
             <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -739,20 +752,6 @@ export default function WebcamDemo() {
             <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <input type="checkbox" checked={mirror} onChange={(e) => setMirror(e.target.checked)} />
               <span>flip horizontal del crop</span>
-            </label>
-
-            <label style={{ display: "grid", gap: 4 }}>
-              <span className="muted mono" style={{ fontSize: 11 }}>
-                iris ocupa {(targetIrisPct * 100).toFixed(0)}% del crop (training = 35%)
-              </span>
-              <input
-                type="range" min={0.15} max={0.65} step={0.01}
-                value={targetIrisPct}
-                onChange={(e) => setTargetIrisPct(parseFloat(e.target.value))}
-              />
-              <span className="muted mono" style={{ fontSize: 10 }}>
-                usa los 5 landmarks de iris (478-pt model) → side = iris_diameter / pct
-              </span>
             </label>
 
             <label style={{ display: "grid", gap: 4 }}>
@@ -768,57 +767,6 @@ export default function WebcamDemo() {
             </label>
 
             <label style={{ display: "grid", gap: 4 }}>
-              <span className="muted mono" style={{ fontSize: 11 }}>
-                umbral confianza {(probThreshold * 100).toFixed(0)}%
-              </span>
-              <input
-                type="range" min={0} max={0.99} step={0.01}
-                value={probThreshold}
-                onChange={(e) => setProbThreshold(parseFloat(e.target.value))}
-              />
-            </label>
-
-            <label style={{ display: "grid", gap: 4 }}>
-              <span className="muted mono" style={{ fontSize: 11 }}>morph kernel iris: {morphKsizeIris}</span>
-              <input
-                type="range" min={1} max={11} step={2}
-                value={morphKsizeIris}
-                onChange={(e) => setMorphKsizeIris(parseInt(e.target.value, 10))}
-              />
-            </label>
-
-            <label style={{ display: "grid", gap: 4 }}>
-              <span className="muted mono" style={{ fontSize: 11 }}>morph kernel pupila: {morphKsizePupil}</span>
-              <input
-                type="range" min={1} max={9} step={2}
-                value={morphKsizePupil}
-                onChange={(e) => setMorphKsizePupil(parseInt(e.target.value, 10))}
-              />
-            </label>
-
-            <label style={{ display: "grid", gap: 4 }}>
-              <span className="muted mono" style={{ fontSize: 11 }}>
-                min iris px: {minIrisPixels}
-              </span>
-              <input
-                type="range" min={0} max={2000} step={50}
-                value={minIrisPixels}
-                onChange={(e) => setMinIrisPixels(parseInt(e.target.value, 10))}
-              />
-            </label>
-
-            <label style={{ display: "grid", gap: 4 }}>
-              <span className="muted mono" style={{ fontSize: 11 }}>
-                min pupila px: {minPupilPixels}
-              </span>
-              <input
-                type="range" min={0} max={500} step={10}
-                value={minPupilPixels}
-                onChange={(e) => setMinPupilPixels(parseInt(e.target.value, 10))}
-              />
-            </label>
-
-            <label style={{ display: "grid", gap: 4 }}>
               <span className="muted mono" style={{ fontSize: 11 }}>heatmap: clase</span>
               <select value={heatmapClass} onChange={(e) => setHeatmapClass(parseInt(e.target.value, 10))}>
                 {HEATMAP_CLASSES.map((label, idx) => (
@@ -826,6 +774,10 @@ export default function WebcamDemo() {
                 ))}
               </select>
             </label>
+
+            <div className="muted mono" style={{ fontSize: 10, lineHeight: 1.5 }}>
+              <strong>defaults</strong>: iris-pct=35% (training match) · blend α=55% · morph k=5/3 · threshold=0 · min px=0. Para tweaking fino, capturá una foto y abrila en el inspector.
+            </div>
 
             <button
               type="button"
@@ -840,6 +792,7 @@ export default function WebcamDemo() {
                 setMinIrisPixels(0);
                 setMinPupilPixels(0);
                 setHeatmapClass(1);
+                setBlendAlpha(0.55);
               }}
               style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", marginTop: 4 }}
             >
@@ -1035,6 +988,18 @@ export default function WebcamDemo() {
             heatmapClass,
             showBboxes,
           }}
+          setRenderOpts={{
+            setBlendAlpha,
+            setPostprocess,
+            setProbThreshold,
+            setMorphKsizeIris,
+            setMorphKsizePupil,
+            setMinIrisPixels,
+            setMinPupilPixels,
+            setSwapClasses,
+            setShowEllipse,
+            setShowPupilCenter,
+          }}
         />
       )}
     </div>
@@ -1180,12 +1145,13 @@ function SideRow({
 
 // Full-screen modal for an existing gallery snapshot. Re-renders all the
 // per-side view tiles from the captured (cropImageData, SegmentationResult)
-// pair every time the sidebar sliders change — no model re-inference needed.
+// pair every time the inspector sliders change — no model re-inference needed.
 function GalleryInspector({
   item,
   onClose,
   views,
   renderOpts,
+  setRenderOpts,
 }: {
   item: {
     id: string;
@@ -1221,6 +1187,18 @@ function GalleryInspector({
     minPupilPixels: number;
     heatmapClass: number;
     showBboxes: boolean;
+  };
+  setRenderOpts: {
+    setBlendAlpha: (v: number) => void;
+    setPostprocess: (v: PostprocessName) => void;
+    setProbThreshold: (v: number) => void;
+    setMorphKsizeIris: (v: number) => void;
+    setMorphKsizePupil: (v: number) => void;
+    setMinIrisPixels: (v: number) => void;
+    setMinPupilPixels: (v: number) => void;
+    setSwapClasses: (v: boolean) => void;
+    setShowEllipse: (v: boolean) => void;
+    setShowPupilCenter: (v: boolean) => void;
   };
 }) {
   // Map per (side, view) → canvas, then re-render whenever renderOpts changes.
@@ -1414,7 +1392,94 @@ function GalleryInspector({
         </div>
 
         <div className="muted mono" style={{ fontSize: 11 }}>
-          los sliders del panel izquierdo se aplican en vivo a este snapshot — sin re-inferencia (logits guardados).
+          tuning en vivo — sin re-inferencia (logits guardados). los cambios persisten al panel left/live.
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 14,
+            padding: 12,
+            background: "var(--panel-2)",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+          }}
+        >
+          <label style={{ display: "grid", gap: 4 }}>
+            <span className="mono" style={{ fontSize: 11 }}>postproceso</span>
+            <select value={renderOpts.postprocess} onChange={(e) => setRenderOpts.setPostprocess(e.target.value as PostprocessName)}>
+              {POSTPROCESS_VARIANTS.map((v) => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </select>
+          </label>
+          <label style={{ display: "grid", gap: 4 }}>
+            <span className="mono" style={{ fontSize: 11 }}>
+              opacidad overlay {(renderOpts.blendAlpha * 100).toFixed(0)}%
+            </span>
+            <input
+              type="range" min={0} max={1} step={0.05}
+              value={renderOpts.blendAlpha}
+              onChange={(e) => setRenderOpts.setBlendAlpha(parseFloat(e.target.value))}
+            />
+          </label>
+          <label style={{ display: "grid", gap: 4 }}>
+            <span className="mono" style={{ fontSize: 11 }}>
+              umbral confianza {(renderOpts.probThreshold * 100).toFixed(0)}%
+            </span>
+            <input
+              type="range" min={0} max={0.99} step={0.01}
+              value={renderOpts.probThreshold}
+              onChange={(e) => setRenderOpts.setProbThreshold(parseFloat(e.target.value))}
+            />
+          </label>
+          <label style={{ display: "grid", gap: 4 }}>
+            <span className="mono" style={{ fontSize: 11 }}>morph k iris: {renderOpts.morphKsizeIris}</span>
+            <input
+              type="range" min={1} max={11} step={2}
+              value={renderOpts.morphKsizeIris}
+              onChange={(e) => setRenderOpts.setMorphKsizeIris(parseInt(e.target.value, 10))}
+            />
+          </label>
+          <label style={{ display: "grid", gap: 4 }}>
+            <span className="mono" style={{ fontSize: 11 }}>morph k pupila: {renderOpts.morphKsizePupil}</span>
+            <input
+              type="range" min={1} max={9} step={2}
+              value={renderOpts.morphKsizePupil}
+              onChange={(e) => setRenderOpts.setMorphKsizePupil(parseInt(e.target.value, 10))}
+            />
+          </label>
+          <label style={{ display: "grid", gap: 4 }}>
+            <span className="mono" style={{ fontSize: 11 }}>min iris px: {renderOpts.minIrisPixels}</span>
+            <input
+              type="range" min={0} max={2000} step={50}
+              value={renderOpts.minIrisPixels}
+              onChange={(e) => setRenderOpts.setMinIrisPixels(parseInt(e.target.value, 10))}
+            />
+          </label>
+          <label style={{ display: "grid", gap: 4 }}>
+            <span className="mono" style={{ fontSize: 11 }}>min pupila px: {renderOpts.minPupilPixels}</span>
+            <input
+              type="range" min={0} max={500} step={10}
+              value={renderOpts.minPupilPixels}
+              onChange={(e) => setRenderOpts.setMinPupilPixels(parseInt(e.target.value, 10))}
+            />
+          </label>
+          <div style={{ display: "grid", gap: 6 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <input type="checkbox" checked={renderOpts.showEllipse} onChange={(e) => setRenderOpts.setShowEllipse(e.target.checked)} />
+              <span className="mono" style={{ fontSize: 11 }}>dibujar elipses</span>
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <input type="checkbox" checked={renderOpts.showPupilCenter} onChange={(e) => setRenderOpts.setShowPupilCenter(e.target.checked)} />
+              <span className="mono" style={{ fontSize: 11 }}>centro pupila</span>
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <input type="checkbox" checked={renderOpts.swapClasses} onChange={(e) => setRenderOpts.setSwapClasses(e.target.checked)} />
+              <span className="mono" style={{ fontSize: 11 }}>swap iris↔pupila</span>
+            </label>
+          </div>
         </div>
 
         {(["left", "right"] as const).map((side) => {
