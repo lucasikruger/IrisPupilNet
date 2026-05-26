@@ -1,0 +1,59 @@
+[
+  {
+    "name": "ritnet_in_2x__final",
+    "url": "/models/ritnet_in_2x__final.onnx",
+    "input": {
+      "channels": 3,
+      "size": 160,
+      "preprocess": "rgb_clahe_lab_gamma_01"
+    },
+    "output": {
+      "classes": [
+        "bg",
+        "iris",
+        "pupil"
+      ]
+    },
+    "dataset": "mobius + polyu + ubiris_zoomed + casia_pix2pix + tayed_pix2pix",
+    "val_iou": 0.8596,
+    "architecture": "ritnet_in_2x (RGB, prod)"
+  },
+  {
+    "name": "ritnet_in__ubiris",
+    "url": "/models/ritnet_in__ubiris.onnx",
+    "input": {
+      "channels": 1,
+      "size": 160,
+      "preprocess": "grayscale_clahe_gamma_01"
+    },
+    "output": {
+      "classes": [
+        "bg",
+        "iris",
+        "pupil"
+      ]
+    },
+    "dataset": "ubiris_v2_with_pupils_zoomed",
+    "val_iou": 0.8169,
+    "architecture": "ritnet_in (BW)"
+  },
+  {
+    "name": "mobilenet_lraspp_large__mobius",
+    "url": "/models/mobilenet_lraspp_large__mobius.onnx",
+    "input": {
+      "channels": 1,
+      "size": 160,
+      "preprocess": "grayscale_clahe_gamma_01"
+    },
+    "output": {
+      "classes": [
+        "bg",
+        "iris",
+        "pupil"
+      ]
+    },
+    "dataset": "mobius",
+    "val_iou": 0.8417,
+    "architecture": "mobilenet_lraspp (BW)"
+  }
+]

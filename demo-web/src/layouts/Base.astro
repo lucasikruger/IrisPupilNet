@@ -1,0 +1,175 @@
+---
+interface Props {
+  title?: string;
+}
+const { title = "Iris Segmentation Demo" } = Astro.props;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <style is:global>
+      :root {
+        --bg: #0b0d10;
+        --bg-elev: #11141a;
+        --fg: #e8eaed;
+        --muted: #8a93a0;
+        --accent: #7aa2f7;
+        --accent-soft: rgba(122, 162, 247, 0.15);
+        --panel: #161a20;
+        --panel-2: #1c2128;
+        --border: #262b33;
+        --border-soft: #1f242c;
+        --mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, monospace;
+        --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+        --radius: 10px;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; height: 100%; }
+      body {
+        background:
+          radial-gradient(1200px 600px at 80% -10%, rgba(122, 162, 247, 0.06), transparent 60%),
+          var(--bg);
+        color: var(--fg);
+        font: 14px/1.5 var(--sans);
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { color: #a8c0fa; }
+      header {
+        padding: 16px 28px;
+        border-bottom: 1px solid var(--border-soft);
+        display: flex;
+        gap: 24px;
+        align-items: center;
+        background: rgba(11, 13, 16, 0.6);
+        backdrop-filter: blur(8px);
+        position: sticky;
+        top: 0;
+        z-index: 10;
+      }
+      header .title {
+        font-family: var(--mono);
+        font-weight: 600;
+        letter-spacing: 0.2px;
+        font-size: 13px;
+      }
+      header .title .slash { color: var(--muted); margin: 0 6px; }
+      header nav { display: flex; gap: 4px; margin-left: auto; }
+      header nav a {
+        padding: 6px 12px;
+        border-radius: 999px;
+        font-size: 13px;
+        color: var(--muted);
+        transition: color 0.15s, background 0.15s;
+      }
+      header nav a:hover { color: var(--fg); background: var(--panel-2); }
+      header nav a[aria-current="page"] { color: var(--fg); background: var(--accent-soft); }
+      main { padding: 20px 24px; max-width: 1640px; margin: 0 auto; }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 16px;
+      }
+      .panel h3 {
+        margin: 0 0 6px;
+        font-size: 13px;
+        font-family: var(--mono);
+        font-weight: 600;
+        letter-spacing: 0.3px;
+      }
+      button {
+        background: var(--accent);
+        color: #0a0c10;
+        border: none;
+        padding: 8px 14px;
+        border-radius: 8px;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 600;
+      }
+      button:hover { filter: brightness(1.08); }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      select, input[type="range"], input[type="file"] {
+        background: var(--panel-2);
+        color: var(--fg);
+        border: 1px solid var(--border);
+        padding: 7px 10px;
+        border-radius: 8px;
+        font: inherit;
+      }
+      select:focus, input[type="range"]:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+      label { display: inline-flex; gap: 8px; align-items: center; }
+      .muted { color: var(--muted); }
+      .mono { font-family: var(--mono); }
+
+      /* segmented control */
+      .segmented {
+        display: inline-flex;
+        background: var(--panel-2);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 3px;
+        gap: 2px;
+      }
+      .segmented button {
+        background: transparent;
+        color: var(--muted);
+        padding: 6px 14px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 500;
+        letter-spacing: 0.2px;
+      }
+      .segmented button:hover { color: var(--fg); }
+      .segmented button.active {
+        background: var(--accent);
+        color: #0a0c10;
+      }
+
+      /* slider polish */
+      input[type="range"] {
+        appearance: none;
+        height: 4px;
+        background: var(--panel-2);
+        padding: 0;
+        border-radius: 999px;
+      }
+      input[type="range"]::-webkit-slider-thumb {
+        appearance: none;
+        width: 14px; height: 14px;
+        border-radius: 50%;
+        background: var(--accent);
+        cursor: pointer;
+        border: 2px solid var(--bg-elev);
+      }
+      input[type="range"]::-moz-range-thumb {
+        width: 14px; height: 14px;
+        border-radius: 50%;
+        background: var(--accent);
+        cursor: pointer;
+        border: 2px solid var(--bg-elev);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="title">iris-seg<span class="slash">/</span>demo</span>
+      <nav>
+        <a href="/" aria-current={Astro.url.pathname === "/" ? "page" : undefined}>webcam</a>
+        <a href="/upload" aria-current={Astro.url.pathname.startsWith("/upload") ? "page" : undefined}>upload</a>
+        <a href="/about" aria-current={Astro.url.pathname.startsWith("/about") ? "page" : undefined}>about</a>
+      </nav>
+    </header>
+    <main>
+      <slot />
+    </main>
+  </body>
+</html>

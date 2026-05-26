@@ -1,0 +1,26 @@
+---
+import Base from "../layouts/Base.astro";
+---
+<Base title="About">
+  <article class="panel" style="line-height: 1.7">
+    <h2 style="margin-top: 0">iris-seg / demo</h2>
+    <p>
+      Aplicación de demo de la tesis. Corre <strong>100% en el browser</strong> —
+      ni la imagen ni la inferencia salen de tu equipo.
+    </p>
+    <p>
+      <strong>Pipeline:</strong> webcam → MediaPipe Face Landmarker → eye crops
+      (16 landmarks por ojo, padding 0.4, square crop) → segmentador ONNX → máscara
+      de 3 clases (fondo / iris / pupila).
+    </p>
+    <p>
+      <strong>Modelo:</strong> MobileNetV3-Large + LR-ASPP, entrenado sobre MOBIUS
+      (grayscale 160×160, val mean IoU 0.842). Para más detalles ver
+      <a href="https://github.com/lucasikruger">repositorio</a>.
+    </p>
+    <p class="muted" style="margin-bottom: 0">
+      El selector de modelo aparece automáticamente si hay más de un segmentador
+      en el manifest <code>/models/models.json</code>.
+    </p>
+  </article>
+</Base>
