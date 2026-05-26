@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { EyeCropper, type CropMode } from "@lib/cropper";
+import { EyeCropper } from "@lib/cropper";
 import { loadFaceLandmarker } from "@lib/mediapipe";
 import { OnnxSegmenter, loadManifest, type ModelSpec, type SegmentationResult } from "@lib/onnx";
 import { drawPreprocessed, drawProbHeatmap, renderCropWithMask } from "@lib/render";
@@ -97,21 +97,9 @@ export default function WebcamDemo() {
   const mirrorRef = useRef(false);
   useEffect(() => { mirrorRef.current = mirror; }, [mirror]);
 
-  const [cropMode, setCropMode] = useState<CropMode>("eye");
-  const cropModeRef = useRef<CropMode>("eye");
-  useEffect(() => { cropModeRef.current = cropMode; }, [cropMode]);
-
-  const [paddingX, setPaddingX] = useState(0.4);
-  const paddingXRef = useRef(0.4);
-  useEffect(() => { paddingXRef.current = paddingX; }, [paddingX]);
-
-  const [paddingY, setPaddingY] = useState(0.4);
-  const paddingYRef = useRef(0.4);
-  useEffect(() => { paddingYRef.current = paddingY; }, [paddingY]);
-
-  const [verticalAnchor, setVerticalAnchor] = useState(0);
-  const verticalAnchorRef = useRef(0);
-  useEffect(() => { verticalAnchorRef.current = verticalAnchor; }, [verticalAnchor]);
+  const [targetIrisPct, setTargetIrisPct] = useState(0.35);
+  const targetIrisPctRef = useRef(0.35);
+  useEffect(() => { targetIrisPctRef.current = targetIrisPct; }, [targetIrisPct]);
 
   const [outputSize, setOutputSize] = useState<number>(160);
   const outputSizeRef = useRef(160);
@@ -144,14 +132,11 @@ export default function WebcamDemo() {
   // Apply cropper option changes between frames.
   useEffect(() => {
     if (cropperRef.current) {
-      cropperRef.current.paddingX = paddingX;
-      cropperRef.current.paddingY = paddingY;
-      cropperRef.current.verticalAnchor = verticalAnchor;
+      cropperRef.current.targetIrisPct = targetIrisPct;
       cropperRef.current.outputSize = outputSize;
       cropperRef.current.mirror = mirror;
-      cropperRef.current.cropMode = cropMode;
     }
-  }, [paddingX, paddingY, verticalAnchor, outputSize, mirror, cropMode]);
+  }, [targetIrisPct, outputSize, mirror]);
 
   const [fps, setFps] = useState(0);
   const [eyesDetected, setEyesDetected] = useState(0);
@@ -326,17 +311,11 @@ export default function WebcamDemo() {
     let fpsTimer = performance.now();
     cropperRef.current ??= new EyeCropper({
       outputSize: outputSizeRef.current,
-      paddingX: paddingXRef.current,
-      paddingY: paddingYRef.current,
-      verticalAnchor: verticalAnchorRef.current,
-      cropMode: cropModeRef.current,
+      targetIrisPct: targetIrisPctRef.current,
     });
-    cropperRef.current.paddingX = paddingXRef.current;
-    cropperRef.current.paddingY = paddingYRef.current;
-    cropperRef.current.verticalAnchor = verticalAnchorRef.current;
+    cropperRef.current.targetIrisPct = targetIrisPctRef.current;
     cropperRef.current.outputSize = outputSizeRef.current;
     cropperRef.current.mirror = mirrorRef.current;
-    cropperRef.current.cropMode = cropModeRef.current;
 
     (async () => {
       try {
@@ -655,67 +634,17 @@ export default function WebcamDemo() {
             </label>
 
             <label style={{ display: "grid", gap: 4 }}>
-              <span className="muted mono" style={{ fontSize: 11 }}>modo de crop</span>
-              <select
-                value={cropMode}
-                onChange={(e) => {
-                  const m = e.target.value as CropMode;
-                  setCropMode(m);
-                  if (m === "eye_tight") {
-                    setPaddingX(0.45);
-                    setPaddingY(0.10);
-                    setVerticalAnchor(0.18);
-                  } else if (m === "iris") {
-                    setPaddingX(0.10);
-                    setPaddingY(0.10);
-                    setVerticalAnchor(0);
-                  } else {
-                    setPaddingX(0.4);
-                    setPaddingY(0.4);
-                    setVerticalAnchor(0);
-                  }
-                }}
-              >
-                <option value="eye">eye — 16 landmarks párpado (default)</option>
-                <option value="eye_tight">eye_tight — sin cejas (anchor abajo)</option>
-                <option value="iris">iris — 5 landmarks iris (sin cejas)</option>
-              </select>
+              <span className="muted mono" style={{ fontSize: 11 }}>
+                iris ocupa {(targetIrisPct * 100).toFixed(0)}% del crop (training = 35%)
+              </span>
+              <input
+                type="range" min={0.15} max={0.65} step={0.01}
+                value={targetIrisPct}
+                onChange={(e) => setTargetIrisPct(parseFloat(e.target.value))}
+              />
               <span className="muted mono" style={{ fontSize: 10 }}>
-                {cropMode === "iris" && "iris-only requiere el modelo 478-pt de MediaPipe"}
+                usa los 5 landmarks de iris (478-pt model) → side = iris_diameter / pct
               </span>
-            </label>
-
-            <label style={{ display: "grid", gap: 4 }}>
-              <span className="muted mono" style={{ fontSize: 11 }}>
-                padding X {(paddingX * 100).toFixed(0)}%
-              </span>
-              <input
-                type="range" min={0} max={1.5} step={0.05}
-                value={paddingX}
-                onChange={(e) => setPaddingX(parseFloat(e.target.value))}
-              />
-            </label>
-
-            <label style={{ display: "grid", gap: 4 }}>
-              <span className="muted mono" style={{ fontSize: 11 }}>
-                padding Y {(paddingY * 100).toFixed(0)}%
-              </span>
-              <input
-                type="range" min={0} max={1.5} step={0.05}
-                value={paddingY}
-                onChange={(e) => setPaddingY(parseFloat(e.target.value))}
-              />
-            </label>
-
-            <label style={{ display: "grid", gap: 4 }}>
-              <span className="muted mono" style={{ fontSize: 11 }}>
-                vertical anchor {verticalAnchor >= 0 ? "+" : ""}{(verticalAnchor * 100).toFixed(0)}% (↓ deja afuera la ceja)
-              </span>
-              <input
-                type="range" min={-0.3} max={0.5} step={0.02}
-                value={verticalAnchor}
-                onChange={(e) => setVerticalAnchor(parseFloat(e.target.value))}
-              />
             </label>
 
             <label style={{ display: "grid", gap: 4 }}>
@@ -795,10 +724,7 @@ export default function WebcamDemo() {
               onClick={() => {
                 setSwapClasses(false);
                 setMirror(false);
-                setCropMode("eye");
-                setPaddingX(0.4);
-                setPaddingY(0.4);
-                setVerticalAnchor(0);
+                setTargetIrisPct(0.35);
                 setOutputSize(160);
                 setProbThreshold(0);
                 setMorphKsizeIris(5);
