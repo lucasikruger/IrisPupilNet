@@ -626,7 +626,10 @@ export default function WebcamDemo() {
             }
           }
           setPupilOffset(sidePupilOff);
-          lastCropsRef.current = frameSnapshot;
+          // Only refresh the snapshot store from a LIVE frame. While paused,
+          // frameSnapshot stays empty (we reused the saved logits instead of
+          // running the model) and we must not overwrite the captured data.
+          if (!isPaused) lastCropsRef.current = frameSnapshot;
 
           rafRef.current = requestAnimationFrame(loop);
         };
@@ -650,7 +653,7 @@ export default function WebcamDemo() {
   const activeViews = VIEW_OPTIONS.filter((v) => enabledViews[v.id]);
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "340px minmax(0, 1fr) 320px", gap: 16, alignItems: "start" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "340px minmax(0, 1fr) 320px 280px", gap: 16, alignItems: "start" }}>
       <aside className="panel" style={{ display: "grid", gap: 16, position: "sticky", top: 80, maxHeight: "calc(100vh - 100px)", overflowY: "auto" }}>
         {cameras.length > 0 && (
           <section style={{ display: "grid", gap: 6 }}>
@@ -961,6 +964,100 @@ export default function WebcamDemo() {
               ))}
             </div>
           )}
+        </section>
+      </aside>
+
+      <aside className="panel" style={{ display: "grid", gap: 16, position: "sticky", top: 80, maxHeight: "calc(100vh - 100px)", overflowY: "auto" }}>
+        <section style={{ display: "grid", gap: 6 }}>
+          <h3>Modelo activo</h3>
+          {(() => {
+            const spec = models.find((m) => m.name === selectedName);
+            if (!spec) return <div className="muted mono" style={{ fontSize: 11 }}>—</div>;
+            return (
+              <div style={{ display: "grid", gap: 6, fontSize: 12 }}>
+                <div className="mono" style={{ color: "var(--accent)", wordBreak: "break-all" }}>{spec.name}</div>
+                <div className="muted mono" style={{ fontSize: 11, lineHeight: 1.4 }}>
+                  {spec.architecture ?? "—"}
+                </div>
+                <div style={{ borderTop: "1px solid var(--border)", paddingTop: 6, display: "grid", gap: 4 }}>
+                  <div className="mono" style={{ fontSize: 11 }}>
+                    <span className="muted">input:</span> {spec.input.channels}ch · {spec.input.size}×{spec.input.size}
+                  </div>
+                  <div className="mono" style={{ fontSize: 11 }}>
+                    <span className="muted">preproc:</span> {spec.input.preprocess}
+                  </div>
+                  <div className="mono" style={{ fontSize: 11 }}>
+                    <span className="muted">val_iou:</span>{" "}
+                    <span style={{ color: "var(--accent)" }}>{spec.val_iou?.toFixed(4) ?? "?"}</span>
+                  </div>
+                  {spec.dataset && (
+                    <div className="mono" style={{ fontSize: 10, lineHeight: 1.5 }}>
+                      <span className="muted">train:</span> {spec.dataset}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+        </section>
+
+        <section style={{ display: "grid", gap: 6 }}>
+          <h3>Postproc activo</h3>
+          <div style={{ display: "grid", gap: 4 }}>
+            <div className="mono" style={{ fontSize: 12, color: "var(--accent)" }}>{postprocess}</div>
+            <div className="muted mono" style={{ fontSize: 10, lineHeight: 1.5 }}>
+              {postprocess === "raw" && "argmax sin tocar"}
+              {postprocess === "largest_cc" && "componente conexo más grande + fill holes"}
+              {postprocess === "morph" && "largest_cc + morph close (k=5/3)"}
+              {postprocess === "ellipse_iris" && "morph + reemplaza iris por disco de elipse fiteada"}
+              {postprocess === "ellipse_iris_pupil" && "+ elipse para pupila sin restricciones"}
+              {postprocess === "ellipse_anatomical" && "+ Hu 2018: pupila ⊂ iris, rₚ ≤ 0.40·rᵢ, offset ≤ 0.30·rᵢ"}
+            </div>
+          </div>
+        </section>
+
+        <section style={{ display: "grid", gap: 6 }}>
+          <h3>Anatomía</h3>
+          {eyesDetected === 0 ? (
+            <div className="muted mono" style={{ fontSize: 11 }}>
+              sin ojos detectados
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 10 }}>
+              {(["left", "right"] as const).map((side) => {
+                const off = pupilOffset[side];
+                if (off === undefined) return null;
+                const offPct = (off * 100).toFixed(0);
+                const cap = (0.30 * 100).toFixed(0);  // Hu 2018 cap
+                const overCap = off > 0.30;
+                return (
+                  <div key={side} style={{ display: "grid", gap: 4, padding: 8, background: "var(--panel-2)", borderRadius: 6, border: "1px solid var(--border)" }}>
+                    <div className="mono muted" style={{ fontSize: 10, letterSpacing: 0.5 }}>{side}</div>
+                    <div className="mono" style={{ fontSize: 11 }}>
+                      pupil/iris offset:{" "}
+                      <span style={{ color: overCap ? "#e08a8a" : "var(--accent)" }}>{offPct}%</span>
+                      <span className="muted" style={{ fontSize: 10 }}> (cap {cap}%)</span>
+                    </div>
+                    {overCap && (
+                      <div className="mono" style={{ fontSize: 10, color: "#e08a8a" }}>
+                        ⚠ supera el cap Hu 2018 — gaze poco confiable
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <section style={{ display: "grid", gap: 6 }}>
+          <h3>Atajos</h3>
+          <div className="muted mono" style={{ fontSize: 11, lineHeight: 1.6 }}>
+            <div><kbd style={{ fontFamily: "var(--mono)", padding: "1px 4px", background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 3 }}>Esc</kbd> cierra el inspector</div>
+            <div>📸 pausa video al capturar</div>
+            <div>▶ reanudar reactiva el live</div>
+            <div>click en foto → inspector grande</div>
+          </div>
         </section>
       </aside>
 
