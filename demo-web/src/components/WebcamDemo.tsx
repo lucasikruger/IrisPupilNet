@@ -29,11 +29,24 @@ interface CameraOption {
 
 export default function WebcamDemo() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const bboxOverlayRef = useRef<HTMLCanvasElement | null>(null);
   // Per-side, per-view canvas refs. Keyed via React state + computed ids.
   const canvasMapRef = useRef<Record<string, HTMLCanvasElement | null>>({});
   const segmenterRef = useRef<OnnxSegmenter | null>(null);
   const cropperRef = useRef<EyeCropper | null>(null);
   const rafRef = useRef<number | null>(null);
+  // Most recent per-frame crops kept around so captureSnapshot can store raw
+  // pixels + logits per side without having to re-run the model on the paused
+  // frame.
+  const lastCropsRef = useRef<
+    Array<{
+      side: "left" | "right";
+      bbox: { x: number; y: number; w: number; h: number };
+      cropImageData: ImageData;
+      result: SegmentationResult;
+      eyelidPoints: { x: number; y: number }[];
+    }>
+  >([]);
 
   const [models, setModels] = useState<ModelSpec[]>([]);
   const [selectedName, setSelectedName] = useState<string | null>(null);
@@ -101,6 +114,16 @@ export default function WebcamDemo() {
   const targetIrisPctRef = useRef(0.35);
   useEffect(() => { targetIrisPctRef.current = targetIrisPct; }, [targetIrisPct]);
 
+  // Freeze-frame mode: while paused the video element is paused and the RAF
+  // loop skips inference. Set true by capturar(), cleared by reanudar().
+  const [paused, setPaused] = useState(false);
+  const pausedRef = useRef(false);
+  useEffect(() => { pausedRef.current = paused; }, [paused]);
+
+  const [showBboxes, setShowBboxes] = useState(true);
+  const showBboxesRef = useRef(true);
+  useEffect(() => { showBboxesRef.current = showBboxes; }, [showBboxes]);
+
   const [outputSize, setOutputSize] = useState<number>(160);
   const outputSizeRef = useRef(160);
   useEffect(() => { outputSizeRef.current = outputSize; }, [outputSize]);
@@ -147,9 +170,29 @@ export default function WebcamDemo() {
   const [cameraOn, setCameraOn] = useState(true);
   // Gallery — each capture is a GalleryItem with the full frame URL and one
   // url per (side, view) tile. All URLs are object URLs and revoked on remove.
-  type GallerySnap = { id: string; ts: number; full: string; tiles: { side: "left" | "right"; view: ViewId; url: string }[]; note: string };
+  // `crops` keeps the raw crop pixels + logits per side so the inspector can
+  // re-render any postprocess variant offline without re-running the model.
+  type GallerySnap = {
+    id: string;
+    ts: number;
+    full: string;
+    tiles: { side: "left" | "right"; view: ViewId; url: string }[];
+    crops: Array<{
+      side: "left" | "right";
+      bbox: { x: number; y: number; w: number; h: number };
+      cropImageData: ImageData;
+      result: SegmentationResult;
+      eyelidPoints: { x: number; y: number }[];
+      modelSpec: ModelSpec;
+    }>;
+    note: string;
+  };
   const [gallery, setGallery] = useState<GallerySnap[]>([]);
   const [autoDownload, setAutoDownload] = useState(false);
+  const [inspectingId, setInspectingId] = useState<string | null>(null);
+  const inspectingItem = inspectingId
+    ? gallery.find((g) => g.id === inspectingId) ?? null
+    : null;
 
   // Revoke all object URLs on unmount.
   useEffect(() => {
@@ -172,6 +215,10 @@ export default function WebcamDemo() {
     const ts = Date.now();
     const stamp = new Date(ts).toISOString().replace(/[:.]/g, "-").slice(0, -5);
 
+    // Freeze the live feed so the user can inspect what was captured.
+    video.pause();
+    setPaused(true);
+
     const full = document.createElement("canvas");
     full.width = video.videoWidth;
     full.height = video.videoHeight;
@@ -191,11 +238,19 @@ export default function WebcamDemo() {
       }
     }
 
+    // Snapshot raw crops + logits from the most-recent live frame so the
+    // inspector can re-render any postprocess variant offline.
+    const spec = segmenterRef.current?.currentSpec ?? null;
+    const savedCrops: GallerySnap["crops"] = spec
+      ? lastCropsRef.current.map((c) => ({ ...c, modelSpec: spec }))
+      : [];
+
     const item: GallerySnap = {
       id: `snap-${ts}-${Math.random().toString(36).slice(2, 7)}`,
       ts,
       full: fullUrl,
       tiles,
+      crops: savedCrops,
       note: "",
     };
     setGallery((g) => [item, ...g]);
@@ -204,6 +259,12 @@ export default function WebcamDemo() {
       triggerDownload(fullUrl, `iris-seg-${stamp}.jpg`);
       for (const t of tiles) triggerDownload(t.url, `iris-seg-${stamp}-${t.side}-${t.view}.png`);
     }
+  };
+
+  const resumeLive = () => {
+    setPaused(false);
+    const video = videoRef.current;
+    if (video) void video.play().catch(() => {});
   };
 
   const removeGalleryItem = (id: string) => {
@@ -347,6 +408,13 @@ export default function WebcamDemo() {
 
         const loop = async () => {
           if (cancelled) return;
+          // When paused (after capturar), keep the RAF alive so we can resume
+          // cleanly, but skip inference and canvas updates so the displayed
+          // crops match the captured frame.
+          if (pausedRef.current) {
+            rafRef.current = requestAnimationFrame(loop);
+            return;
+          }
           const now = performance.now();
           frameCount++;
           if (now - fpsTimer >= 1000) {
@@ -357,6 +425,32 @@ export default function WebcamDemo() {
 
           const crops = cropperRef.current?.cropEyes(landmarker, video, now) ?? [];
           setEyesDetected(crops.length);
+
+          // Draw eye bboxes on overlay canvas (in source-video coordinates).
+          const overlay = bboxOverlayRef.current;
+          if (overlay) {
+            if (overlay.width !== video.videoWidth || overlay.height !== video.videoHeight) {
+              overlay.width = video.videoWidth;
+              overlay.height = video.videoHeight;
+            }
+            const octx = overlay.getContext("2d");
+            if (octx) {
+              octx.clearRect(0, 0, overlay.width, overlay.height);
+              if (showBboxesRef.current) {
+                octx.lineWidth = Math.max(2, Math.round(video.videoWidth / 400));
+                octx.strokeStyle = "rgba(80, 220, 245, 0.95)";
+                octx.font = `${Math.max(14, Math.round(video.videoWidth / 80))}px sans-serif`;
+                octx.fillStyle = "rgba(80, 220, 245, 0.95)";
+                for (const c of crops) {
+                  octx.strokeRect(c.bbox.x, c.bbox.y, c.bbox.w, c.bbox.h);
+                  octx.fillText(c.side, c.bbox.x + 4, c.bbox.y - 4);
+                }
+              }
+            }
+          }
+
+          // Reset per-frame snapshot store; we'll fill it as we process each crop.
+          const frameSnapshot: typeof lastCropsRef.current = [];
 
           const seenSides = new Set<string>();
           const sidePupilOff: { left?: number; right?: number } = {};
@@ -389,6 +483,19 @@ export default function WebcamDemo() {
             } catch (e) {
               console.warn("seg failed:", e);
               continue;
+            }
+
+            // Snapshot this crop's raw pixels + logits so captureSnapshot can
+            // freeze the data without needing a second model invocation.
+            const cctx = crop.canvas.getContext("2d");
+            if (cctx) {
+              frameSnapshot.push({
+                side: crop.side,
+                bbox: crop.bbox,
+                cropImageData: cctx.getImageData(0, 0, crop.canvas.width, crop.canvas.height),
+                result,
+                eyelidPoints: crop.eyelidPoints,
+              });
             }
 
             const ppOpts: PostprocessOptions = {
@@ -491,6 +598,7 @@ export default function WebcamDemo() {
             }
           }
           setPupilOffset(sidePupilOff);
+          lastCropsRef.current = frameSnapshot;
 
           rafRef.current = requestAnimationFrame(loop);
         };
@@ -742,12 +850,43 @@ export default function WebcamDemo() {
       </aside>
 
       <div className="panel" style={{ display: "grid", gap: 16 }}>
-        <video
-          ref={videoRef}
-          playsInline
-          muted
-          style={{ width: "100%", borderRadius: 8, background: "#000", display: "block" }}
-        />
+        <div style={{ position: "relative", width: "100%" }}>
+          <video
+            ref={videoRef}
+            playsInline
+            muted
+            style={{ width: "100%", borderRadius: 8, background: "#000", display: "block" }}
+          />
+          <canvas
+            ref={bboxOverlayRef}
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              width: "100%",
+              height: "100%",
+              pointerEvents: "none",
+              borderRadius: 8,
+            }}
+          />
+          {paused && (
+            <div
+              style={{
+                position: "absolute",
+                top: 8,
+                right: 8,
+                background: "rgba(0,0,0,0.75)",
+                color: "#fff",
+                padding: "4px 10px",
+                borderRadius: 6,
+                fontFamily: "var(--mono)",
+                fontSize: 11,
+              }}
+            >
+              ⏸ pausado
+            </div>
+          )}
+        </div>
         <div style={{ display: "grid", gap: 10 }}>
           <div className="muted mono" style={{ fontSize: 11, letterSpacing: 0.5 }}>
             vistas activas — {activeViews.length}/{VIEW_OPTIONS.length}
@@ -797,10 +936,18 @@ export default function WebcamDemo() {
             <button
               type="button"
               onClick={captureSnapshot}
-              disabled={!cameraOn || fps === 0}
+              disabled={!cameraOn || paused || (fps === 0 && !paused)}
             >
               📸 capturar
             </button>
+            {paused && (
+              <button
+                type="button"
+                onClick={resumeLive}
+              >
+                ▶ reanudar
+              </button>
+            )}
             {cameraOn ? (
               <button
                 type="button"
@@ -822,6 +969,10 @@ export default function WebcamDemo() {
           <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <input type="checkbox" checked={autoDownload} onChange={(e) => setAutoDownload(e.target.checked)} />
             <span className="muted mono" style={{ fontSize: 11 }}>auto-descargar al capturar</span>
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <input type="checkbox" checked={showBboxes} onChange={(e) => setShowBboxes(e.target.checked)} />
+            <span className="muted mono" style={{ fontSize: 11 }}>mostrar bbox de los ojos</span>
           </label>
           <div className="muted mono" style={{ fontSize: 11 }}>
             galería: <span style={{ color: "var(--accent)" }}>{gallery.length}</span> {gallery.length === 1 ? "foto" : "fotos"}
@@ -852,12 +1003,40 @@ export default function WebcamDemo() {
                   onRemove={() => removeGalleryItem(item.id)}
                   onDownload={() => downloadGalleryItem(item)}
                   onNote={(n) => updateNote(item.id, n)}
+                  onInspect={() => setInspectingId(item.id)}
                 />
               ))}
             </div>
           )}
         </section>
       </aside>
+
+      {inspectingItem && (
+        <GalleryInspector
+          item={inspectingItem}
+          onClose={() => setInspectingId(null)}
+          views={VIEW_OPTIONS}
+          renderOpts={{
+            overlay,
+            blendAlpha,
+            bw,
+            postprocess,
+            showIris,
+            showPupil,
+            showEllipse,
+            showPupilCenter,
+            showEyelid,
+            swapClasses,
+            probThreshold,
+            morphKsizeIris,
+            morphKsizePupil,
+            minIrisPixels,
+            minPupilPixels,
+            heatmapClass,
+            showBboxes,
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -867,11 +1046,13 @@ function GalleryItem({
   onRemove,
   onDownload,
   onNote,
+  onInspect,
 }: {
-  item: { id: string; ts: number; full: string; tiles: { side: "left" | "right"; view: ViewId; url: string }[]; note: string };
+  item: { id: string; ts: number; full: string; tiles: { side: "left" | "right"; view: ViewId; url: string }[]; note: string; crops?: unknown };
   onRemove: () => void;
   onDownload: () => void;
   onNote: (n: string) => void;
+  onInspect: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const tilesBySide: Record<"left" | "right", typeof item.tiles> = { left: [], right: [] };
@@ -879,9 +1060,14 @@ function GalleryItem({
   const ts = new Date(item.ts);
   return (
     <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 10, display: "grid", gap: 8, background: "var(--panel-2)" }}>
-      <a href={item.full} target="_blank" rel="noreferrer">
+      <button
+        type="button"
+        onClick={onInspect}
+        title="inspeccionar en grande con sliders en vivo"
+        style={{ padding: 0, border: 0, background: "transparent", cursor: "zoom-in" }}
+      >
         <img src={item.full} alt="" style={{ width: "100%", borderRadius: 6, display: "block", border: "1px solid var(--border)" }} />
-      </a>
+      </button>
       <div className="mono" style={{ fontSize: 11 }}>
         {ts.toLocaleTimeString()} <span className="muted">· {item.tiles.length} tiles</span>
       </div>
@@ -892,13 +1078,20 @@ function GalleryItem({
         onChange={(e) => onNote(e.target.value)}
         style={{ background: "var(--panel)", color: "var(--fg)", border: "1px solid var(--border)", padding: "5px 8px", borderRadius: 6, font: "inherit", fontSize: 12 }}
       />
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 4 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 4 }}>
+        <button
+          type="button"
+          onClick={onInspect}
+          style={{ fontSize: 11, padding: "5px 8px" }}
+        >
+          🔍 inspeccionar
+        </button>
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
           style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", fontSize: 11, padding: "5px 8px" }}
         >
-          {open ? "ocultar" : "ver tiles"}
+          {open ? "ocultar" : "tiles"}
         </button>
         <button type="button" onClick={onDownload} style={{ fontSize: 11, padding: "5px 8px" }}>↓ todo</button>
         <button
@@ -980,6 +1173,276 @@ function SideRow({
             />
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// Full-screen modal for an existing gallery snapshot. Re-renders all the
+// per-side view tiles from the captured (cropImageData, SegmentationResult)
+// pair every time the sidebar sliders change — no model re-inference needed.
+function GalleryInspector({
+  item,
+  onClose,
+  views,
+  renderOpts,
+}: {
+  item: {
+    id: string;
+    ts: number;
+    full: string;
+    crops: Array<{
+      side: "left" | "right";
+      bbox: { x: number; y: number; w: number; h: number };
+      cropImageData: ImageData;
+      result: SegmentationResult;
+      eyelidPoints: { x: number; y: number }[];
+      modelSpec: ModelSpec;
+    }>;
+    note: string;
+  };
+  onClose: () => void;
+  views: readonly { id: ViewId; label: string }[];
+  renderOpts: {
+    overlay: ShowMode;
+    blendAlpha: number;
+    bw: boolean;
+    postprocess: PostprocessName;
+    showIris: boolean;
+    showPupil: boolean;
+    showEllipse: boolean;
+    showPupilCenter: boolean;
+    showEyelid: boolean;
+    swapClasses: boolean;
+    probThreshold: number;
+    morphKsizeIris: number;
+    morphKsizePupil: number;
+    minIrisPixels: number;
+    minPupilPixels: number;
+    heatmapClass: number;
+    showBboxes: boolean;
+  };
+}) {
+  // Map per (side, view) → canvas, then re-render whenever renderOpts changes.
+  const canvasMap = useRef<Record<string, HTMLCanvasElement | null>>({});
+  const fullImgRef = useRef<HTMLImageElement | null>(null);
+  const overlayRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Draw bbox overlay on the big preview image.
+  useEffect(() => {
+    const img = fullImgRef.current;
+    const ov = overlayRef.current;
+    if (!img || !ov) return;
+    const draw = () => {
+      const W = img.naturalWidth, H = img.naturalHeight;
+      if (W === 0) return;
+      ov.width = W; ov.height = H;
+      const ctx = ov.getContext("2d");
+      if (!ctx) return;
+      ctx.clearRect(0, 0, W, H);
+      if (!renderOpts.showBboxes) return;
+      ctx.lineWidth = Math.max(2, Math.round(W / 400));
+      ctx.strokeStyle = "rgba(80, 220, 245, 0.95)";
+      ctx.font = `${Math.max(14, Math.round(W / 80))}px sans-serif`;
+      ctx.fillStyle = "rgba(80, 220, 245, 0.95)";
+      for (const c of item.crops) {
+        ctx.strokeRect(c.bbox.x, c.bbox.y, c.bbox.w, c.bbox.h);
+        ctx.fillText(c.side, c.bbox.x + 4, c.bbox.y - 4);
+      }
+    };
+    if (img.complete) draw();
+    else img.addEventListener("load", draw, { once: true });
+  }, [item, renderOpts.showBboxes]);
+
+  // Re-render all tile canvases on slider/options change.
+  useEffect(() => {
+    for (const c of item.crops) {
+      const spec = c.modelSpec;
+      const srcCanvas = document.createElement("canvas");
+      srcCanvas.width = c.cropImageData.width;
+      srcCanvas.height = c.cropImageData.height;
+      const sctx = srcCanvas.getContext("2d");
+      if (!sctx) continue;
+      sctx.putImageData(c.cropImageData, 0, 0);
+
+      const ppOpts: PostprocessOptions = {
+        morphKsizeIris: renderOpts.morphKsizeIris,
+        morphKsizePupil: renderOpts.morphKsizePupil,
+        minIrisPixels: renderOpts.minIrisPixels,
+        minPupilPixels: renderOpts.minPupilPixels,
+        swapClasses: renderOpts.swapClasses,
+        probThreshold: renderOpts.probThreshold,
+      };
+
+      const crop = canvasMap.current[`${c.side}-crop`];
+      if (crop) {
+        crop.width = srcCanvas.width;
+        crop.height = srcCanvas.height;
+        crop.getContext("2d")?.drawImage(srcCanvas, 0, 0);
+      }
+      const pre = canvasMap.current[`${c.side}-preprocessed`];
+      if (pre) drawPreprocessed(pre, srcCanvas, spec.input.preprocess, spec.input.size ?? 160);
+
+      const rawC = canvasMap.current[`${c.side}-raw`];
+      if (rawC) {
+        renderCropWithMask(rawC, srcCanvas, c.result, {
+          show: "blend",
+          blendAlpha: renderOpts.blendAlpha,
+          bw: renderOpts.bw,
+          postprocess: "raw",
+          postprocessOpts: { swapClasses: renderOpts.swapClasses, probThreshold: renderOpts.probThreshold },
+          showIris: renderOpts.showIris,
+          showPupil: renderOpts.showPupil,
+        });
+      }
+
+      const postC = canvasMap.current[`${c.side}-post`];
+      if (postC) {
+        renderCropWithMask(postC, srcCanvas, c.result, {
+          show: renderOpts.overlay,
+          blendAlpha: renderOpts.blendAlpha,
+          bw: renderOpts.bw,
+          postprocess: renderOpts.postprocess,
+          postprocessOpts: ppOpts,
+          showIris: renderOpts.showIris,
+          showPupil: renderOpts.showPupil,
+          hardMask: true,
+        });
+      }
+
+      const ellC = canvasMap.current[`${c.side}-ellipse`];
+      if (ellC) {
+        renderCropWithMask(ellC, srcCanvas, c.result, {
+          show: "blend",
+          blendAlpha: renderOpts.blendAlpha,
+          bw: renderOpts.bw,
+          postprocess: "ellipse_anatomical",
+          postprocessOpts: ppOpts,
+          showIris: renderOpts.showIris,
+          showPupil: renderOpts.showPupil,
+          showEllipse: renderOpts.showEllipse,
+          showPupilCenter: renderOpts.showPupilCenter,
+        });
+      }
+
+      const lmC = canvasMap.current[`${c.side}-landmarks`];
+      if (lmC) {
+        renderCropWithMask(lmC, srcCanvas, c.result, {
+          show: "blend",
+          blendAlpha: renderOpts.blendAlpha,
+          bw: renderOpts.bw,
+          postprocess: renderOpts.postprocess,
+          postprocessOpts: ppOpts,
+          showIris: renderOpts.showIris,
+          showPupil: renderOpts.showPupil,
+          showEyelid: renderOpts.showEyelid,
+          eyelidPoints: c.eyelidPoints,
+        });
+      }
+
+      const hmC = canvasMap.current[`${c.side}-heatmap`];
+      if (hmC) drawProbHeatmap(hmC, c.result, renderOpts.heatmapClass);
+    }
+  }, [item, renderOpts]);
+
+  // Lock body scroll while modal open.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
+  // Close on Esc.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const ts = new Date(item.ts);
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.85)",
+        zIndex: 1000,
+        overflowY: "auto",
+        padding: 24,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          maxWidth: 1400,
+          margin: "0 auto",
+          background: "var(--panel)",
+          borderRadius: 12,
+          border: "1px solid var(--border)",
+          padding: 20,
+          display: "grid",
+          gap: 16,
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div className="mono" style={{ fontSize: 13 }}>
+            <span style={{ color: "var(--accent)" }}>inspector</span>{" "}
+            <span className="muted">· {ts.toLocaleString()}</span>
+            {item.note && <span className="muted"> · {item.note}</span>}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", fontSize: 13, padding: "6px 12px" }}
+          >
+            cerrar ✕
+          </button>
+        </div>
+
+        <div style={{ position: "relative" }}>
+          <img
+            ref={fullImgRef}
+            src={item.full}
+            alt=""
+            style={{ width: "100%", display: "block", borderRadius: 8, border: "1px solid var(--border)" }}
+          />
+          <canvas
+            ref={overlayRef}
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", borderRadius: 8 }}
+          />
+        </div>
+
+        <div className="muted mono" style={{ fontSize: 11 }}>
+          los sliders del panel izquierdo se aplican en vivo a este snapshot — sin re-inferencia (logits guardados).
+        </div>
+
+        {(["left", "right"] as const).map((side) => {
+          const has = item.crops.find((c) => c.side === side);
+          if (!has) return null;
+          return (
+            <div key={side} style={{ display: "grid", gap: 8 }}>
+              <span className="mono muted" style={{ fontSize: 12, letterSpacing: 0.5 }}>{side}</span>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+                {views.map((v) => (
+                  <div key={v.id} style={{ display: "grid", gap: 4, justifyItems: "center" }}>
+                    <span className="muted mono" style={{ fontSize: 11, letterSpacing: 0.5 }}>{v.label}</span>
+                    <canvas
+                      ref={(el) => { canvasMap.current[`${side}-${v.id}`] = el; }}
+                      style={{
+                        width: "100%",
+                        aspectRatio: "1 / 1",
+                        border: "1px solid var(--border)",
+                        borderRadius: 6,
+                        background: "#0a0c10",
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
