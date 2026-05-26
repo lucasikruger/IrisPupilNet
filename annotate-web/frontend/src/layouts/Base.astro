@@ -1,0 +1,93 @@
+---
+interface Props {
+  title?: string;
+}
+const { title = "Iris dataset — contribuí una muestra" } = Astro.props;
+---
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <style is:global>
+      :root {
+        --bg: #f7f6f1;
+        --fg: #1a1a1a;
+        --muted: #6a6a6a;
+        --accent: #2f5d8a;
+        --warn: #c2410c;
+        --panel: #fffefb;
+        --border: #d6d2c4;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; min-height: 100%; }
+      body {
+        background: var(--bg);
+        color: var(--fg);
+        font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      a { color: var(--accent); }
+      header {
+        padding: 16px 24px;
+        border-bottom: 1px solid var(--border);
+        font-weight: 600;
+        letter-spacing: 0.3px;
+      }
+      main {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 28px 22px 60px;
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 20px;
+      }
+      button {
+        background: var(--accent);
+        color: white;
+        border: none;
+        padding: 10px 16px;
+        border-radius: 6px;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 600;
+      }
+      button.secondary {
+        background: transparent;
+        color: var(--fg);
+        border: 1px solid var(--border);
+      }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      button:hover:not(:disabled) { filter: brightness(0.95); }
+      input[type="text"], input[type="email"], select, textarea {
+        background: white;
+        border: 1px solid var(--border);
+        padding: 8px 10px;
+        border-radius: 6px;
+        font: inherit;
+        width: 100%;
+      }
+      .muted { color: var(--muted); }
+      .form-row { display: grid; gap: 6px; margin-bottom: 14px; }
+      .row { display: flex; gap: 10px; align-items: center; }
+      h2 { margin-top: 0; }
+      .steps {
+        display: flex;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 18px;
+      }
+      .steps span.active { color: var(--accent); font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <header>iris-seg / contribuí una muestra</header>
+    <main>
+      <slot />
+    </main>
+  </body>
+</html>

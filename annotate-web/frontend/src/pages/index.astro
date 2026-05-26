@@ -1,0 +1,9 @@
+---
+import Base from "../layouts/Base.astro";
+import AnnotateFlow from "../components/AnnotateFlow.tsx";
+
+const apiUrl = import.meta.env.PUBLIC_API_URL ?? "http://localhost:8000";
+---
+<Base>
+  <AnnotateFlow client:only="react" apiUrl={apiUrl} />
+</Base>

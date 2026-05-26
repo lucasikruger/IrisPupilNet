@@ -1,0 +1,40 @@
+[
+  {
+    "name": "ritnet_in__ubiris",
+    "url": "/models/ritnet_in__ubiris.onnx",
+    "input": {
+      "channels": 1,
+      "size": 160,
+      "preprocess": "grayscale_clahe_norm_01"
+    },
+    "output": {
+      "classes": [
+        "bg",
+        "iris",
+        "pupil"
+      ]
+    },
+    "dataset": "ubiris_v2_with_pupils_zoomed",
+    "val_iou": 0.8168982457728039,
+    "architecture": "ritnet_in"
+  },
+  {
+    "name": "mobilenet_lraspp_large__mobius",
+    "url": "/models/mobilenet_lraspp_large__mobius.onnx",
+    "input": {
+      "channels": 1,
+      "size": 160,
+      "preprocess": "grayscale_clahe_norm_01"
+    },
+    "output": {
+      "classes": [
+        "bg",
+        "iris",
+        "pupil"
+      ]
+    },
+    "dataset": "mobius",
+    "val_iou": 0.8416528953004625,
+    "architecture": "mobilenet_lraspp"
+  }
+]
