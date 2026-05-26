@@ -653,7 +653,7 @@ export default function WebcamDemo() {
   const activeViews = VIEW_OPTIONS.filter((v) => enabledViews[v.id]);
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "340px minmax(0, 1fr) 320px 280px", gap: 16, alignItems: "start" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "340px minmax(0, 1fr) 320px", gap: 16, alignItems: "start" }}>
       <aside className="panel" style={{ display: "grid", gap: 16, position: "sticky", top: 80, maxHeight: "calc(100vh - 100px)", overflowY: "auto" }}>
         {cameras.length > 0 && (
           <section style={{ display: "grid", gap: 6 }}>
@@ -730,6 +730,21 @@ export default function WebcamDemo() {
               </button>
             ))}
           </div>
+          {overlay === "blend" && (
+            <label style={{ display: "grid", gap: 4 }}>
+              <span className="muted mono" style={{ fontSize: 11 }}>
+                opacidad {(blendAlpha * 100).toFixed(0)}%
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={blendAlpha}
+                onChange={(e) => setBlendAlpha(parseFloat(e.target.value))}
+              />
+            </label>
+          )}
           <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
             <input type="checkbox" checked={bw} onChange={(e) => setBw(e.target.checked)} />
             <span>como entrada del modelo (BW)</span>
@@ -745,7 +760,7 @@ export default function WebcamDemo() {
           <label><input type="checkbox" checked={showEyelid} onChange={(e) => setShowEyelid(e.target.checked)} /><span>puntos párpado</span></label>
         </section>
 
-        <details style={{ background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 8, padding: 10 }}>
+        <details open style={{ background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 8, padding: 10 }}>
           <summary style={{ cursor: "pointer", fontFamily: "var(--mono)", fontSize: 13, fontWeight: 600 }}>Debug</summary>
           <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
             <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -755,6 +770,20 @@ export default function WebcamDemo() {
             <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <input type="checkbox" checked={mirror} onChange={(e) => setMirror(e.target.checked)} />
               <span>flip horizontal del crop</span>
+            </label>
+
+            <label style={{ display: "grid", gap: 4 }}>
+              <span className="muted mono" style={{ fontSize: 11 }}>
+                iris ocupa {(targetIrisPct * 100).toFixed(0)}% del crop (training = 35%)
+              </span>
+              <input
+                type="range" min={0.15} max={0.65} step={0.01}
+                value={targetIrisPct}
+                onChange={(e) => setTargetIrisPct(parseFloat(e.target.value))}
+              />
+              <span className="muted mono" style={{ fontSize: 10 }}>
+                side = iris_diameter / pct, usando los 5 landmarks de iris
+              </span>
             </label>
 
             <label style={{ display: "grid", gap: 4 }}>
@@ -770,6 +799,57 @@ export default function WebcamDemo() {
             </label>
 
             <label style={{ display: "grid", gap: 4 }}>
+              <span className="muted mono" style={{ fontSize: 11 }}>
+                umbral confianza {(probThreshold * 100).toFixed(0)}% (default 0)
+              </span>
+              <input
+                type="range" min={0} max={0.99} step={0.01}
+                value={probThreshold}
+                onChange={(e) => setProbThreshold(parseFloat(e.target.value))}
+              />
+            </label>
+
+            <label style={{ display: "grid", gap: 4 }}>
+              <span className="muted mono" style={{ fontSize: 11 }}>morph k iris: {morphKsizeIris} (default 5)</span>
+              <input
+                type="range" min={1} max={11} step={2}
+                value={morphKsizeIris}
+                onChange={(e) => setMorphKsizeIris(parseInt(e.target.value, 10))}
+              />
+            </label>
+
+            <label style={{ display: "grid", gap: 4 }}>
+              <span className="muted mono" style={{ fontSize: 11 }}>morph k pupila: {morphKsizePupil} (default 3)</span>
+              <input
+                type="range" min={1} max={9} step={2}
+                value={morphKsizePupil}
+                onChange={(e) => setMorphKsizePupil(parseInt(e.target.value, 10))}
+              />
+            </label>
+
+            <label style={{ display: "grid", gap: 4 }}>
+              <span className="muted mono" style={{ fontSize: 11 }}>
+                min iris px: {minIrisPixels} (default 0)
+              </span>
+              <input
+                type="range" min={0} max={2000} step={50}
+                value={minIrisPixels}
+                onChange={(e) => setMinIrisPixels(parseInt(e.target.value, 10))}
+              />
+            </label>
+
+            <label style={{ display: "grid", gap: 4 }}>
+              <span className="muted mono" style={{ fontSize: 11 }}>
+                min pupila px: {minPupilPixels} (default 0)
+              </span>
+              <input
+                type="range" min={0} max={500} step={10}
+                value={minPupilPixels}
+                onChange={(e) => setMinPupilPixels(parseInt(e.target.value, 10))}
+              />
+            </label>
+
+            <label style={{ display: "grid", gap: 4 }}>
               <span className="muted mono" style={{ fontSize: 11 }}>heatmap: clase</span>
               <select value={heatmapClass} onChange={(e) => setHeatmapClass(parseInt(e.target.value, 10))}>
                 {HEATMAP_CLASSES.map((label, idx) => (
@@ -777,10 +857,6 @@ export default function WebcamDemo() {
                 ))}
               </select>
             </label>
-
-            <div className="muted mono" style={{ fontSize: 10, lineHeight: 1.5 }}>
-              <strong>defaults</strong>: iris-pct=35% (training match) · blend α=55% · morph k=5/3 · threshold=0 · min px=0. Para tweaking fino, capturá una foto y abrila en el inspector.
-            </div>
 
             <button
               type="button"
@@ -965,9 +1041,8 @@ export default function WebcamDemo() {
             </div>
           )}
         </section>
-      </aside>
 
-      <aside className="panel" style={{ display: "grid", gap: 16, position: "sticky", top: 80, maxHeight: "calc(100vh - 100px)", overflowY: "auto" }}>
+
         <section style={{ display: "grid", gap: 6 }}>
           <h3>Modelo activo</h3>
           {(() => {
