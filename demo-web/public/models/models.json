@@ -1,5 +1,45 @@
 [
   {
+    "name": "ritnet_in_2x__4class_combined",
+    "url": "/models/ritnet_in_2x__4class_combined.onnx",
+    "input": {
+      "channels": 3,
+      "size": 160,
+      "preprocess": "rgb_clahe_lab_gamma_01"
+    },
+    "output": {
+      "classes": [
+        "bg",
+        "sclera",
+        "iris",
+        "pupil"
+      ]
+    },
+    "dataset": "mobius + polyu_with_sclera_vis + casia_with_sclera_vis + tayed_with_sclera_vis",
+    "val_iou": 0.7359,
+    "architecture": "ritnet_in_2x 4-class (bg/sclera/iris/pupil) \u2014 mobius + polyu/casia/tayed_with_sclera",
+    "num_classes": 4
+  },
+  {
+    "name": "ritnet_in_2x__mobius_within",
+    "url": "/models/ritnet_in_2x__mobius_within.onnx",
+    "input": {
+      "channels": 3,
+      "size": 160,
+      "preprocess": "rgb_clahe_lab_gamma_01"
+    },
+    "output": {
+      "classes": [
+        "bg",
+        "iris",
+        "pupil"
+      ]
+    },
+    "dataset": "mobius (within-dataset, subject-disjoint val)",
+    "val_iou": 0.7315,
+    "architecture": "ritnet_in_2x (RGB, within-dataset MOBIUS only)"
+  },
+  {
     "name": "ritnet_in_2x__lodo_mobius",
     "url": "/models/ritnet_in_2x__lodo_mobius.onnx",
     "input": {
@@ -16,7 +56,7 @@
     },
     "dataset": "polyu + ubiris_zoomed + casia_pix2pix_rgb + tayed_pix2pix_rgb (MOBIUS held out)",
     "val_iou": 0.8735,
-    "architecture": "ritnet_in_2x (RGB, LODO mobius-held-out) — true generalization test"
+    "architecture": "ritnet_in_2x (RGB, LODO mobius-held-out) \u2014 true generalization test"
   },
   {
     "name": "ritnet_in_2x__final",

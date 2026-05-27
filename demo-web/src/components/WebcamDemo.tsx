@@ -69,6 +69,10 @@ export default function WebcamDemo() {
   const postprocessRef = useRef<PostprocessName>("ellipse_anatomical");
   useEffect(() => { postprocessRef.current = postprocess; }, [postprocess]);
 
+  const [showSclera, setShowSclera] = useState(true);
+  const showScleraRef = useRef(true);
+  useEffect(() => { showScleraRef.current = showSclera; }, [showSclera]);
+
   const [showIris, setShowIris] = useState(true);
   const showIrisRef = useRef(true);
   useEffect(() => { showIrisRef.current = showIris; }, [showIris]);
@@ -545,6 +549,7 @@ export default function WebcamDemo() {
                   bw: bwRef.current,
                   postprocess: "raw",
                   postprocessOpts: { swapClasses: swapClassesRef.current, probThreshold: probThresholdRef.current },
+                  showSclera: showScleraRef.current,
                   showIris: showIrisRef.current,
                   showPupil: showPupilRef.current,
                 });
@@ -561,6 +566,7 @@ export default function WebcamDemo() {
                   bw: bwRef.current,
                   postprocess: postprocessRef.current,
                   postprocessOpts: ppOpts,
+                  showSclera: showScleraRef.current,
                   showIris: showIrisRef.current,
                   showPupil: showPupilRef.current,
                   hardMask: true,
@@ -579,6 +585,7 @@ export default function WebcamDemo() {
                   bw: bwRef.current,
                   postprocess: "ellipse_anatomical",
                   postprocessOpts: ppOpts,
+                  showSclera: showScleraRef.current,
                   showIris: showIrisRef.current,
                   showPupil: showPupilRef.current,
                   showEllipse: showEllipseRef.current,
@@ -604,6 +611,7 @@ export default function WebcamDemo() {
                   bw: bwRef.current,
                   postprocess: postprocessRef.current,
                   postprocessOpts: ppOpts,
+                  showSclera: showScleraRef.current,
                   showIris: showIrisRef.current,
                   showPupil: showPupilRef.current,
                   showEyelid: showEyelidRef.current,
@@ -755,6 +763,7 @@ export default function WebcamDemo() {
 
         <section style={{ display: "grid", gap: 6 }}>
           <h3>Clases & overlays</h3>
+          <label><input type="checkbox" checked={showSclera} onChange={(e) => setShowSclera(e.target.checked)} /><span>sclera <span className="muted" style={{ fontSize: 10 }}>(solo modelos 4-class)</span></span></label>
           <label><input type="checkbox" checked={showIris} onChange={(e) => setShowIris(e.target.checked)} /><span>iris</span></label>
           <label><input type="checkbox" checked={showPupil} onChange={(e) => setShowPupil(e.target.checked)} /><span>pupila</span></label>
           <label><input type="checkbox" checked={showEllipse} onChange={(e) => setShowEllipse(e.target.checked)} /><span>elipse ajustada</span></label>
@@ -1149,6 +1158,7 @@ export default function WebcamDemo() {
             blendAlpha,
             bw,
             postprocess,
+            showSclera,
             showIris,
             showPupil,
             showEllipse,
@@ -1349,6 +1359,7 @@ function GalleryInspector({
     blendAlpha: number;
     bw: boolean;
     postprocess: PostprocessName;
+    showSclera: boolean;
     showIris: boolean;
     showPupil: boolean;
     showEllipse: boolean;
@@ -1444,6 +1455,7 @@ function GalleryInspector({
           bw: renderOpts.bw,
           postprocess: "raw",
           postprocessOpts: { swapClasses: renderOpts.swapClasses, probThreshold: renderOpts.probThreshold },
+          showSclera: renderOpts.showSclera,
           showIris: renderOpts.showIris,
           showPupil: renderOpts.showPupil,
         });
@@ -1457,6 +1469,7 @@ function GalleryInspector({
           bw: renderOpts.bw,
           postprocess: renderOpts.postprocess,
           postprocessOpts: ppOpts,
+          showSclera: renderOpts.showSclera,
           showIris: renderOpts.showIris,
           showPupil: renderOpts.showPupil,
           hardMask: true,
@@ -1472,6 +1485,7 @@ function GalleryInspector({
           bw: renderOpts.bw,
           postprocess: "ellipse_anatomical",
           postprocessOpts: ppOpts,
+          showSclera: renderOpts.showSclera,
           showIris: renderOpts.showIris,
           showPupil: renderOpts.showPupil,
           showEllipse: renderOpts.showEllipse,
@@ -1488,6 +1502,7 @@ function GalleryInspector({
           bw: renderOpts.bw,
           postprocess: renderOpts.postprocess,
           postprocessOpts: ppOpts,
+          showSclera: renderOpts.showSclera,
           showIris: renderOpts.showIris,
           showPupil: renderOpts.showPupil,
           showEyelid: renderOpts.showEyelid,

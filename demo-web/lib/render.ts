@@ -5,18 +5,34 @@ import { applyPostprocess, fitIrisPupilEllipses, type Ellipse, type PostprocessN
 import { PREPROCESS, type PreprocessName } from "./preprocess";
 
 // 3-class palette: 0=bg (transparent), 1=iris (cyan), 2=pupil (magenta).
-const PALETTE: Array<[number, number, number, number]> = [
+const PALETTE_3: Array<[number, number, number, number]> = [
   [0, 0, 0, 0],
   [55, 220, 245, 200],   // iris
   [245, 80, 200, 220],   // pupil
 ];
-
-// "Hard" palette for the mask-only view (full alpha).
-const PALETTE_HARD: Array<[number, number, number, number]> = [
+const PALETTE_3_HARD: Array<[number, number, number, number]> = [
   [12, 14, 18, 255],
   [55, 220, 245, 255],
   [245, 80, 200, 255],
 ];
+
+// 4-class palette: 0=bg, 1=sclera (yellow), 2=iris (cyan), 3=pupil (magenta).
+const PALETTE_4: Array<[number, number, number, number]> = [
+  [0, 0, 0, 0],
+  [255, 240, 120, 170],  // sclera (soft yellow, lower alpha so iris stays readable)
+  [55, 220, 245, 200],   // iris
+  [245, 80, 200, 220],   // pupil
+];
+const PALETTE_4_HARD: Array<[number, number, number, number]> = [
+  [12, 14, 18, 255],
+  [255, 240, 120, 255],
+  [55, 220, 245, 255],
+  [245, 80, 200, 255],
+];
+
+// Legacy aliases (kept so older imports keep working).
+const PALETTE = PALETTE_3;
+const PALETTE_HARD = PALETTE_3_HARD;
 
 export interface RenderOptions {
   show: "crop" | "mask" | "blend";
@@ -25,6 +41,7 @@ export interface RenderOptions {
   postprocess?: PostprocessName;  // default "morph"
   postprocessOpts?: PostprocessOptions; // morph kernels, min area, swap, threshold
   preprocessName?: PreprocessName; // for the "preprocessed" preview
+  showSclera?: boolean;       // default true (4-class models only)
   showIris?: boolean;         // default true
   showPupil?: boolean;        // default true
   showEllipse?: boolean;      // draw fitted iris/pupil ellipses on top
@@ -102,14 +119,21 @@ export function maskToRgba(
   showIris = true,
   showPupil = true,
   hard = false,
+  numClasses: 3 | 4 = 3,
+  showSclera = true,
 ): ImageData {
-  const palette = hard ? PALETTE_HARD : PALETTE;
+  const palette = numClasses === 4
+    ? (hard ? PALETTE_4_HARD : PALETTE_4)
+    : (hard ? PALETTE_3_HARD : PALETTE_3);
   const bgAlpha = hard ? palette[0][3] : 0;
+  // Per-class show flags (indexed by class id).
+  const visible = numClasses === 4
+    ? [false, showSclera, showIris, showPupil]   // 4-class: bg, sclera, iris, pupil
+    : [false, showIris, showPupil];               // 3-class: bg, iris, pupil
   const out = new Uint8ClampedArray(size * size * 4);
   for (let i = 0; i < mask.length; i++) {
     let cls = mask[i];
-    if (cls === 1 && !showIris) cls = 0;
-    else if (cls === 2 && !showPupil) cls = 0;
+    if (cls < 0 || cls >= visible.length || !visible[cls]) cls = 0;
     if (cls === 0) {
       if (hard) {
         out[i * 4] = palette[0][0];
@@ -201,8 +225,27 @@ export function renderCropWithMask(
       }
     }
   }
-  const postMask = applyPostprocess(seg.argmax, seg.size, variant, ppOpts, seg.probs);
-  const ellipses = fitIrisPupilEllipses(postMask, seg.size);
+  // Detect 4-class model from segmenter output. For 4-class we skip postprocess
+  // (ellipse / morph operate on iris+pupil only) and render the raw 4-class
+  // argmax directly so sclera (class 1) is visible.
+  const is4Class = seg.numClasses === 4;
+  let postMask: Uint8Array;
+  let ellipses: { iris: Ellipse | null; pupil: Ellipse | null };
+  if (is4Class) {
+    // Remap 4-class → 3-class for the ellipse fitting helper (it assumes
+    // class 1 = iris, class 2 = pupil): 0→0, 1→0 (sclera→bg), 2→1, 3→2.
+    const remapped = new Uint8Array(seg.argmax.length);
+    for (let i = 0; i < seg.argmax.length; i++) {
+      const c = seg.argmax[i];
+      remapped[i] = c === 2 ? 1 : c === 3 ? 2 : 0;
+    }
+    ellipses = fitIrisPupilEllipses(remapped, seg.size);
+    // postMask shown to the user keeps the original 4-class argmax so sclera renders.
+    postMask = seg.argmax.slice();
+  } else {
+    postMask = applyPostprocess(seg.argmax, seg.size, variant, ppOpts, seg.probs);
+    ellipses = fitIrisPupilEllipses(postMask, seg.size);
+  }
 
   if (!ctx) return { postMask, ellipses };
   ctx.clearRect(0, 0, target.width, target.height);
@@ -221,6 +264,8 @@ export function renderCropWithMask(
       opts.showIris ?? true,
       opts.showPupil ?? true,
       opts.show === "mask" && (opts.hardMask ?? true),
+      is4Class ? 4 : 3,
+      opts.showSclera ?? true,
     );
     const tmp = document.createElement("canvas");
     tmp.width = seg.size;
