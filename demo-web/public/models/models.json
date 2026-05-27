@@ -8,55 +8,12 @@
       "preprocess": "rgb_clahe_lab_gamma_01"
     },
     "output": {
-      "classes": [
-        "bg",
-        "sclera",
-        "iris",
-        "pupil"
-      ]
+      "classes": ["bg", "sclera", "iris", "pupil"]
     },
-    "dataset": "mobius + polyu_with_sclera_vis + casia_with_sclera_vis + tayed_with_sclera_vis",
-    "val_iou": 0.7359,
-    "architecture": "ritnet_in_2x 4-class (bg/sclera/iris/pupil) \u2014 mobius + polyu/casia/tayed_with_sclera",
+    "dataset": "mobius + polyu_with_sclera_vis + casia_with_sclera_vis + tayed_with_sclera_vis (en train)",
+    "val_iou": 0.7642,
+    "architecture": "ritnet_in_2x 4-class (bg/sclera/iris/pupil) RGB",
     "num_classes": 4
-  },
-  {
-    "name": "ritnet_in_2x__mobius_within",
-    "url": "/models/ritnet_in_2x__mobius_within.onnx",
-    "input": {
-      "channels": 3,
-      "size": 160,
-      "preprocess": "rgb_clahe_lab_gamma_01"
-    },
-    "output": {
-      "classes": [
-        "bg",
-        "iris",
-        "pupil"
-      ]
-    },
-    "dataset": "mobius (within-dataset, subject-disjoint val)",
-    "val_iou": 0.7315,
-    "architecture": "ritnet_in_2x (RGB, within-dataset MOBIUS only)"
-  },
-  {
-    "name": "ritnet_in_2x__lodo_mobius",
-    "url": "/models/ritnet_in_2x__lodo_mobius.onnx",
-    "input": {
-      "channels": 3,
-      "size": 160,
-      "preprocess": "rgb_clahe_lab_gamma_01"
-    },
-    "output": {
-      "classes": [
-        "bg",
-        "iris",
-        "pupil"
-      ]
-    },
-    "dataset": "polyu + ubiris_zoomed + casia_pix2pix_rgb + tayed_pix2pix_rgb (MOBIUS held out)",
-    "val_iou": 0.8735,
-    "architecture": "ritnet_in_2x (RGB, LODO mobius-held-out) \u2014 true generalization test"
   },
   {
     "name": "ritnet_in_2x__final",
@@ -67,15 +24,76 @@
       "preprocess": "rgb_clahe_lab_gamma_01"
     },
     "output": {
-      "classes": [
-        "bg",
-        "iris",
-        "pupil"
-      ]
+      "classes": ["bg", "iris", "pupil"]
     },
-    "dataset": "mobius + polyu + ubiris_zoomed + casia_pix2pix + tayed_pix2pix",
+    "dataset": "mobius + polyu + ubiris + casia_pix2pix + tayed_pix2pix (all-data 3-class)",
     "val_iou": 0.8596,
-    "architecture": "ritnet_in_2x (RGB, prod)"
+    "architecture": "ritnet_in_2x 3-class production (RGB)",
+    "num_classes": 3
+  },
+  {
+    "name": "ritnet_in_2x__lodo_mobius",
+    "url": "/models/ritnet_in_2x__lodo_mobius.onnx",
+    "input": {
+      "channels": 3,
+      "size": 160,
+      "preprocess": "rgb_clahe_lab_gamma_01"
+    },
+    "output": {
+      "classes": ["bg", "iris", "pupil"]
+    },
+    "dataset": "polyu + ubiris + casia_pix2pix + tayed_pix2pix (MOBIUS held out, v15 boundary loss)",
+    "val_iou": 0.8773,
+    "architecture": "ritnet_in_2x 3-class — LODO MOBIUS held-out, v15 boundary",
+    "num_classes": 3
+  },
+  {
+    "name": "ritnet_in_2x__lodo_polyu",
+    "url": "/models/ritnet_in_2x__lodo_polyu.onnx",
+    "input": {
+      "channels": 3,
+      "size": 160,
+      "preprocess": "rgb_clahe_lab_gamma_01"
+    },
+    "output": {
+      "classes": ["bg", "iris", "pupil"]
+    },
+    "dataset": "mobius + ubiris + casia_pix2pix + tayed_pix2pix (POLYU held out)",
+    "val_iou": 0.8214,
+    "architecture": "ritnet_in_2x 3-class — LODO POLYU held-out",
+    "num_classes": 3
+  },
+  {
+    "name": "ritnet_in_2x__lodo_ubiris",
+    "url": "/models/ritnet_in_2x__lodo_ubiris.onnx",
+    "input": {
+      "channels": 3,
+      "size": 160,
+      "preprocess": "rgb_clahe_lab_gamma_01"
+    },
+    "output": {
+      "classes": ["bg", "iris", "pupil"]
+    },
+    "dataset": "mobius + polyu + casia_pix2pix + tayed_pix2pix (UBIRIS held out)",
+    "val_iou": 0.8550,
+    "architecture": "ritnet_in_2x 3-class — LODO UBIRIS held-out",
+    "num_classes": 3
+  },
+  {
+    "name": "ritnet_in_2x__mobius_within",
+    "url": "/models/ritnet_in_2x__mobius_within.onnx",
+    "input": {
+      "channels": 3,
+      "size": 160,
+      "preprocess": "rgb_clahe_lab_gamma_01"
+    },
+    "output": {
+      "classes": ["bg", "iris", "pupil"]
+    },
+    "dataset": "mobius only (within-dataset, subject-disjoint val) — para SOTA comparison",
+    "val_iou": 0.7315,
+    "architecture": "ritnet_in_2x 3-class — MOBIUS within-dataset",
+    "num_classes": 3
   },
   {
     "name": "ritnet_in__ubiris",
@@ -86,15 +104,12 @@
       "preprocess": "grayscale_clahe_gamma_01"
     },
     "output": {
-      "classes": [
-        "bg",
-        "iris",
-        "pupil"
-      ]
+      "classes": ["bg", "iris", "pupil"]
     },
-    "dataset": "ubiris_v2_with_pupils_zoomed",
+    "dataset": "ubiris_v2_with_pupils_zoomed (BW lite)",
     "val_iou": 0.8169,
-    "architecture": "ritnet_in (BW)"
+    "architecture": "ritnet_in (BW lite, 0.11M params)",
+    "num_classes": 3
   },
   {
     "name": "mobilenet_lraspp_large__mobius",
@@ -105,14 +120,11 @@
       "preprocess": "grayscale_clahe_gamma_01"
     },
     "output": {
-      "classes": [
-        "bg",
-        "iris",
-        "pupil"
-      ]
+      "classes": ["bg", "iris", "pupil"]
     },
-    "dataset": "mobius",
+    "dataset": "mobius (pretrained backbone)",
     "val_iou": 0.8417,
-    "architecture": "mobilenet_lraspp (BW)"
+    "architecture": "mobilenet_lraspp_large 3-class (BW, 1.07M params)",
+    "num_classes": 3
   }
 ]
