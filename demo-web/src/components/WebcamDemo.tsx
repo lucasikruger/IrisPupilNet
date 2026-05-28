@@ -416,7 +416,7 @@ export default function WebcamDemo() {
         await refreshCameras(activeId);
 
         setStatus("cargando face landmarker…");
-        const landmarker = await loadFaceLandmarker();
+        const landmarker = await loadFaceLandmarker("VIDEO");
         if (cancelled) return;
 
         const loop = async () => {

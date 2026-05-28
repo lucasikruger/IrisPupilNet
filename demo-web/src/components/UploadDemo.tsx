@@ -38,6 +38,10 @@ export default function UploadDemo() {
       const seg = segmenterRef.current ?? new OnnxSegmenter();
       segmenterRef.current = seg;
       await seg.load(spec);
+      // If the user uploaded a photo before the model finished loading,
+      // reprocess now so the canvases get the segmentation pass instead
+      // of staying on the raw-crop fallback.
+      if (imgRef.current?.complete) process();
     })();
   }, [selectedName, models]);
 
@@ -51,7 +55,7 @@ export default function UploadDemo() {
     const img = imgRef.current;
     if (!img || !img.complete) return;
     const cropper = new EyeCropper({ outputSize: 160 });
-    const landmarker = await loadFaceLandmarker();
+    const landmarker = await loadFaceLandmarker("IMAGE");
     const crops = cropper.cropEyes(landmarker, img);
     if (crops.length === 0) {
       setStatus("no se detectó cara — probá otra foto");
@@ -62,19 +66,34 @@ export default function UploadDemo() {
       if (c) c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
     }
     const seg = segmenterRef.current;
+    const segReady = seg?.ready ?? false;
     for (const crop of crops) {
       const target = crop.side === "left" ? leftRef.current : rightRef.current;
       if (!target) continue;
-      if (!seg || !seg.currentSpec) {
+      if (!segReady) {
+        // Model still loading — paint the raw crop so the user sees something.
+        // The useEffect that drives seg.load() will re-invoke process() once
+        // the session is ready and replace these with the segmented version.
         target.width = crop.canvas.width;
         target.height = crop.canvas.height;
         target.getContext("2d")?.drawImage(crop.canvas, 0, 0);
         continue;
       }
-      const r = await seg.run(crop.canvas);
-      renderCropWithMask(target, crop.canvas, r, { show });
+      try {
+        const r = await seg!.run(crop.canvas);
+        renderCropWithMask(target, crop.canvas, r, { show });
+      } catch (err) {
+        // Don't leave the canvas blank if inference dies — fall back to the
+        // raw crop and surface the error in the status panel.
+        target.width = crop.canvas.width;
+        target.height = crop.canvas.height;
+        target.getContext("2d")?.drawImage(crop.canvas, 0, 0);
+        setStatus(`error en segmentación: ${(err as Error).message}`);
+      }
     }
-    setStatus(`${crops.length} ojo(s) procesado(s)`);
+    setStatus(segReady
+      ? `${crops.length} ojo(s) procesado(s)`
+      : `${crops.length} ojo(s) recortado(s) · esperando modelo…`);
   }
 
   return (

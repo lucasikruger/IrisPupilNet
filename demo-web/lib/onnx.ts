@@ -104,6 +104,13 @@ export class OnnxSegmenter {
   get currentSpec(): ModelSpec | null {
     return this.spec;
   }
+
+  // True only when the session is fully created and run() will succeed.
+  // `spec` is set synchronously at the start of load(), so it can't be used
+  // as a readiness signal on its own.
+  get ready(): boolean {
+    return this.session !== null;
+  }
 }
 
 export async function loadManifest(url = "/models/models.json"): Promise<ModelSpec[]> {

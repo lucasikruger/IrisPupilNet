@@ -1,12 +1,20 @@
 // Lazy-load MediaPipe Face Landmarker, self-hosted from /mediapipe/.
+//
+// MediaPipe requires the running mode to match the call: `detect()` only
+// works with "IMAGE", `detectForVideo()` only with "VIDEO". We cache one
+// instance per mode so callers (UploadDemo vs WebcamDemo) can ask for the
+// flavour they need without paying a model-load each time.
 
 import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 
-let landmarkerPromise: Promise<FaceLandmarker> | null = null;
+export type RunningMode = "IMAGE" | "VIDEO";
 
-export function loadFaceLandmarker(): Promise<FaceLandmarker> {
-  if (landmarkerPromise) return landmarkerPromise;
-  landmarkerPromise = (async () => {
+const landmarkerPromises: Partial<Record<RunningMode, Promise<FaceLandmarker>>> = {};
+
+export function loadFaceLandmarker(mode: RunningMode = "IMAGE"): Promise<FaceLandmarker> {
+  const cached = landmarkerPromises[mode];
+  if (cached) return cached;
+  const p = (async () => {
     const vision = await FilesetResolver.forVisionTasks("/mediapipe/wasm");
     return FaceLandmarker.createFromOptions(vision, {
       baseOptions: {
@@ -19,8 +27,9 @@ export function loadFaceLandmarker(): Promise<FaceLandmarker> {
       numFaces: 1,
       minFaceDetectionConfidence: 0.2,
       minFacePresenceConfidence: 0.2,
-      runningMode: "VIDEO",
+      runningMode: mode,
     });
   })();
-  return landmarkerPromise;
+  landmarkerPromises[mode] = p;
+  return p;
 }
