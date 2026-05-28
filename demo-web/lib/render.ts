@@ -225,23 +225,55 @@ export function renderCropWithMask(
       }
     }
   }
-  // Detect 4-class model from segmenter output. For 4-class we skip postprocess
-  // (ellipse / morph operate on iris+pupil only) and render the raw 4-class
-  // argmax directly so sclera (class 1) is visible.
+  // Detect 4-class model from segmenter output.
   const is4Class = seg.numClasses === 4;
   let postMask: Uint8Array;
   let ellipses: { iris: Ellipse | null; pupil: Ellipse | null };
   if (is4Class) {
-    // Remap 4-class → 3-class for the ellipse fitting helper (it assumes
-    // class 1 = iris, class 2 = pupil): 0→0, 1→0 (sclera→bg), 2→1, 3→2.
+    // 4-class flow: sclera lives in the original argmax. iris+pupil go
+    // through postprocess via a remap so the existing ellipse / morph logic
+    // works (it assumes class 1=iris, 2=pupil). We then combine sclera back
+    // in for the final display.
+    const ppOpts4 = ppOpts ?? {};
+    // Remap argmax 4-class → 3-class for postprocess: bg=0, iris=1, pupil=2.
+    // Apply swap (iris↔pupil) here too if requested.
+    const swap = ppOpts4.swapClasses ?? false;
     const remapped = new Uint8Array(seg.argmax.length);
+    const scleraMask = new Uint8Array(seg.argmax.length);
     for (let i = 0; i < seg.argmax.length; i++) {
       const c = seg.argmax[i];
-      remapped[i] = c === 2 ? 1 : c === 3 ? 2 : 0;
+      if (c === 1) { scleraMask[i] = 1; remapped[i] = 0; }      // sclera → kept separately
+      else if (c === 2) remapped[i] = swap ? 2 : 1;             // iris → class 1 (or 2 if swapped)
+      else if (c === 3) remapped[i] = swap ? 1 : 2;             // pupil → class 2 (or 1 if swapped)
+      else remapped[i] = 0;
     }
-    ellipses = fitIrisPupilEllipses(remapped, seg.size);
-    // postMask shown to the user keeps the original 4-class argmax so sclera renders.
-    postMask = seg.argmax.slice();
+    // Probs for 3-class postprocess: build a (3, H, W) slice from the 4-class
+    // probs (drop sclera channel).
+    let probs3: Float32Array | null = null;
+    if (seg.probs) {
+      const plane = seg.size * seg.size;
+      probs3 = new Float32Array(3 * plane);
+      // class 0 = original bg + sclera (sum), class 1 = iris, class 2 = pupil
+      for (let p = 0; p < plane; p++) {
+        probs3[p] = seg.probs[p] + seg.probs[1 * plane + p];   // bg + sclera
+        probs3[1 * plane + p] = seg.probs[2 * plane + p];       // iris
+        probs3[2 * plane + p] = seg.probs[3 * plane + p];       // pupil
+      }
+    }
+    // ⚠ remove swapClasses from ppOpts before passing to applyPostprocess
+    //   (we already handled it above on the remapped argmax).
+    const ppOpts3: PostprocessOptions = { ...ppOpts4, swapClasses: false };
+    const processed3 = applyPostprocess(remapped, seg.size, variant, ppOpts3, probs3);
+    ellipses = fitIrisPupilEllipses(processed3, seg.size);
+    // Combine: sclera stays from raw argmax, iris/pupil come from postprocessed.
+    postMask = new Uint8Array(seg.argmax.length);
+    for (let i = 0; i < seg.argmax.length; i++) {
+      const ip = processed3[i];
+      if (ip === 1) postMask[i] = 2;                      // iris
+      else if (ip === 2) postMask[i] = 3;                 // pupil
+      else if (scleraMask[i]) postMask[i] = 1;            // sclera
+      else postMask[i] = 0;
+    }
   } else {
     postMask = applyPostprocess(seg.argmax, seg.size, variant, ppOpts, seg.probs);
     ellipses = fitIrisPupilEllipses(postMask, seg.size);

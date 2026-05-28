@@ -152,9 +152,18 @@ export default function WebcamDemo() {
   const minPupilPixelsRef = useRef(0);
   useEffect(() => { minPupilPixelsRef.current = minPupilPixels; }, [minPupilPixels]);
 
-  const [heatmapClass, setHeatmapClass] = useState<number>(1); // 0=bg, 1=iris, 2=pupil
+  const [heatmapClass, setHeatmapClass] = useState<number>(1); // 0=bg, 1=iris, 2=pupil (or 1=sclera for 4-class)
   const heatmapClassRef = useRef(1);
   useEffect(() => { heatmapClassRef.current = heatmapClass; }, [heatmapClass]);
+  // When the user switches between 3-class and 4-class models, the class
+  // indices change. Clamp heatmapClass into the new model's valid range so
+  // we don't request out-of-bounds probabilities.
+  useEffect(() => {
+    const spec = models.find((m) => m.name === selectedName);
+    const n = spec?.output.classes.length ?? 3;
+    if (heatmapClass >= n) setHeatmapClass(n - 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedName, models]);
 
   // Apply cropper option changes between frames.
   useEffect(() => {
@@ -863,9 +872,15 @@ export default function WebcamDemo() {
             <label style={{ display: "grid", gap: 4 }}>
               <span className="muted mono" style={{ fontSize: 11 }}>heatmap: clase</span>
               <select value={heatmapClass} onChange={(e) => setHeatmapClass(parseInt(e.target.value, 10))}>
-                {HEATMAP_CLASSES.map((label, idx) => (
-                  <option key={label} value={idx}>{idx} — {label}</option>
-                ))}
+                {(() => {
+                  // Build the heatmap class list from the active model's output.classes
+                  // so 4-class models show sclera as a selectable channel.
+                  const spec = models.find((m) => m.name === selectedName);
+                  const labels = spec?.output.classes ?? HEATMAP_CLASSES;
+                  return labels.map((label, idx) => (
+                    <option key={`${label}-${idx}`} value={idx}>{idx} — {label}</option>
+                  ));
+                })()}
               </select>
             </label>
 
